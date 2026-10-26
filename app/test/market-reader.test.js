@@ -111,3 +111,46 @@ test("a bad print far from its neighbours is dropped before it can become a leve
   assert.equal(c.length, 59);
   assert.ok(c.every((b) => b.high < 1000));
 });
+
+import { orderFlow, todayFlow } from "../public/lib/market-reader.js";
+
+test("buying and selling volume: a close at the high is all buying, at the low all selling", () => {
+  const base = series(40, { amp: 2 });
+  const t = base.at(-1).time;
+  const atHigh = [...base, { time: t + 86400, open: 100, high: 104, low: 100, close: 104, volume: 5000 }];
+  const atLow = [...base, { time: t + 86400, open: 104, high: 104, low: 100, close: 100, volume: 5000 }];
+  assert.equal(orderFlow(atHigh).lastBar.buyPct, 100);
+  assert.equal(orderFlow(atLow).lastBar.buyPct, 0);
+  assert.equal(orderFlow(atHigh).big.at(-1).kind, "buy", "5x volume closing at the high is big buying");
+  assert.equal(orderFlow(atLow).big.at(-1).kind, "sell");
+  assert.ok(orderFlow(atHigh).estimated);
+});
+
+test("today's flow only counts the last day's 15-minute bars", () => {
+  const day1 = Date.UTC(2026, 9, 25, 6) / 1000,
+    day2 = Date.UTC(2026, 9, 26, 6) / 1000;
+  const b = (time, close) => ({ time, open: 100, high: 101, low: 99, close, volume: 100 });
+  const r = todayFlow([b(day1, 99), b(day1 + 900, 99), b(day2, 101), b(day2 + 900, 101)]);
+  assert.equal(r.bars, 2);
+  assert.equal(r.buyPct, 100);
+});
+
+test("the buy plan: stop under the entry, targets above it in order, reward to risk from the entry", () => {
+  const r = readMarket(all(series(300, { amp: 6, period: 25 })));
+  const p = r.plan;
+  assert.ok(p, "a ranging market has a plan");
+  assert.ok(p.stop < p.entryZone.from && p.entryZone.from <= p.entryZone.to);
+  assert.equal(p.targets.length, 3);
+  assert.ok(p.targets[0].price > p.entry && p.targets[1].price > p.targets[0].price && p.targets[2].price > p.targets[1].price);
+  for (const t of p.targets) assert.ok(Math.abs(t.rr - (t.price - p.entry) / (p.entry - p.stop)) < 0.06, `${t.rr}`);
+  assert.match(p.note, /ليست توصية/);
+});
+
+import { rp } from "../public/lib/market-reader.js";
+
+test("prices keep the precision a cheap stock or a coin needs", () => {
+  assert.equal(rp(9635.44), 9635.4);
+  assert.equal(rp(753.256), 753.26);
+  assert.equal(rp(3.52449), 3.524);
+  assert.equal(rp(0.000123456), 0.0001235);
+});

@@ -7,7 +7,7 @@ import { AgentTools } from "./agent.js";
 import { readMarket, READER_TFS } from "../lib/market-reader.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const num = (v) => (v == null ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }));
+const num = (v) => (v == null ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: Math.abs(v) < 1 ? 6 : Math.abs(v) < 100 ? 3 : 2 }));
 const cache = new Map(); // `${sym}|${tf}` -> { at, bars }
 const FRESH_MS = 55_000;
 let timer = null,
@@ -89,13 +89,15 @@ function view(r, sym, main) {
   <div class="mr-row"><span class="mr-k">صافي السيولة</span><b class="mr-wide ${r.flow.net >= 0 ? "mr-up" : "mr-dn"}">${r.flow.net >= 0 ? "داخلة" : "خارجة"} · ${r.flow.improving ? "تتحسن ↑" : "تضعف ↓"} · CMF ${num(r.flow.cmf)}</b></div>` : ""}
   <div class="mr-sec">ميزان الإشارات الفنية <span class="mr-sub ${r.signal.key > 0 ? "mr-up" : r.signal.key < 0 ? "mr-dn" : "mr-flat"}">${esc(r.signal.ar)} · ${r.signal.positive}✓ ${r.signal.negative}✗</span></div>
   <ul class="mr-checks">${r.signal.checks.map((c) => `<li class="${c.v > 0 ? "mr-up" : c.v < 0 ? "mr-dn" : "mr-na"}"><i>${c.v > 0 ? "✓" : c.v < 0 ? "✗" : "•"}</i>${esc(c.ar)}</li>`).join("")}</ul>
-  ${r.plan ? `<div class="mr-sec">خطة المستويات</div>
-  <div class="mr-grid">
-    <div><span>منطقة الدخول</span><b class="mr-up"><bdi dir="ltr">${num(r.plan.entryZone.from)} – ${num(r.plan.entryZone.to)}</bdi></b></div>
-    <div><span>إلغاء الفكرة</span><b class="mr-dn">${num(r.plan.invalidation)}<small>-${num(r.plan.riskPct)}%</small></b></div>
-    <div><span>الهدف الأول</span><b class="mr-up">${num(r.plan.target1)}<small>+${num(r.plan.rewardPct)}%</small></b></div>
-    <div><span>العائد : المخاطرة</span><b class="${r.plan.rr >= 2 ? "mr-up" : r.plan.rr < 1 ? "mr-dn" : "mr-flat"}">1 : ${num(r.plan.rr)}</b></div>
-  </div>` : ""}
+  ${r.trades ? `<div class="mr-sec">صفقات الشراء والبيع <span class="mr-sub">تقدير من الشموع</span></div>
+  ${r.trades.today ? `<div class="mr-k" style="font-size:12px">اليوم</div><div class="mr-flowbar"><span class="mr-in" style="width:${r.trades.today.buyPct}%">شراء ${r.trades.today.buyPct}%</span><span class="mr-out">بيع ${100 - r.trades.today.buyPct}%</span></div>` : ""}
+  <div class="mr-k" style="font-size:12px">آخر ${r.trades.period.bars} جلسة</div><div class="mr-flowbar"><span class="mr-in" style="width:${r.trades.period.buyPct}%">شراء ${r.trades.period.buyPct}%</span><span class="mr-out">بيع ${100 - r.trades.period.buyPct}%</span></div>
+  <div class="mr-row"><span class="mr-k">صفقات كبيرة</span><b class="mr-wide">${r.trades.big.filter((x) => x.kind === "buy").length} شراء · ${r.trades.big.filter((x) => x.kind === "sell").length} بيع <small style="color:var(--muted);font-weight:400">(حجم 2x فأكثر، آخر 60 شمعة)</small></b></div>` : ""}
+  ${r.plan ? `<div class="mr-sec">خطة شراء <span class="mr-sub">${esc(r.plan.where)}</span></div>
+  <div class="mr-row mr-up-soft"><span class="mr-k">منطقة الدخول</span><b class="mr-wide"><bdi dir="ltr">${num(r.plan.entryZone.from)} – ${num(r.plan.entryZone.to)}</bdi> <small style="color:var(--muted);font-weight:400">${esc(r.plan.entryWhy)}</small></b></div>
+  <div class="mr-row mr-dn-soft"><span class="mr-k">وقف الخسارة</span><b>${num(r.plan.stop)}</b><span></span><span class="mr-pct mr-dn">-${num(r.plan.stopPct)}%</span></div>
+  ${r.plan.targets.map((t) => `<div class="mr-row mr-up-soft"><span class="mr-k">الهدف ${t.n}</span><b>${num(t.price)}</b><span class="mr-str">1:${num(t.rr)} <small>${esc(t.from)}</small></span><span class="mr-pct mr-up">+${num(t.pct)}%</span></div>`).join("")}
+  <div class="mr-note">${esc(r.plan.note)}</div>` : ""}
   <div class="mr-reading">${esc(r.reading)}</div>
   <div class="mr-note">${esc(r.note)} البيانات من مصدر الشارت وقد تتأخر.</div>`;
 }

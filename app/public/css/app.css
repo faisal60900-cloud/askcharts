@@ -2894,3 +2894,22 @@ button.sr-chip:hover { background: var(--chrome-hover); }
 .mr-checks li { display: flex; gap: 6px; align-items: center; padding: 4px 6px; border-radius: 4px; background: var(--hover); }
 .mr-checks i { font-style: normal; font-weight: 700; width: 14px; text-align: center; }
 .ov-card { overflow-y: auto; }
+
+/* buy plan lines and big-volume candles on the chart */
+.ov-marks { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.ov-marks [hidden] { display: none; }
+.ov-pl { position: absolute; height: 0; border-top: 1.5px dashed; }
+.ov-pl span { position: absolute; right: 4px; bottom: 2px; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 700; color: #fff; white-space: nowrap; direction: rtl; }
+.ov-pl small { font-weight: 400; opacity: 0.9; }
+.ov-pl-stop { border-color: var(--down); }
+.ov-pl-stop span { background: var(--down); }
+.ov-pl-tp { border-color: var(--up); }
+.ov-pl-tp span { background: var(--up); }
+.ov-pl-entry { height: auto; border: 1px solid #2196f3; background: color-mix(in srgb, #2196f3 18%, transparent); }
+.ov-pl-entry span { background: #1e63c6; bottom: auto; top: 2px; }
+.ov-bt { position: absolute; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; font-size: 12px; font-weight: 700; line-height: 1; }
+.ov-bt small { font-size: 9px; font-weight: 600; white-space: nowrap; }
+.ov-bt-buy { color: var(--up); }
+.ov-bt-sell { color: var(--down); transform: translate(-50%, -100%); }
+.ov-mini { margin-inline-start: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 4px; font-size: 10px; padding: 1px 6px; cursor: pointer; pointer-events: auto; }
+.ov-plan-h small { color: var(--muted); font-weight: 400; }
