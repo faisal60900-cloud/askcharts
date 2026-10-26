@@ -66,3 +66,48 @@ test("too few bars on the main timeframe gives a clear Arabic message", () => {
 test("every reading says it is not advice", () => {
   assert.match(readMarket(all(series(200))).note, /ليست توصية/);
 });
+
+import { moneyFlow } from "../public/lib/market-reader.js";
+
+test("money flow: rising closes on volume read as inflow, falling as outflow", () => {
+  const upFlow = moneyFlow(series(80, { drift: 0.5, amp: 0.5 }));
+  const dnFlow = moneyFlow(series(80, { start: 200, drift: -0.5, amp: 0.5 }));
+  assert.ok(upFlow.inflowPct > 70, `${upFlow.inflowPct}`);
+  assert.ok(dnFlow.inflowPct < 30, `${dnFlow.inflowPct}`);
+  assert.equal(moneyFlow(series(10)), null);
+});
+
+test("a close through a twice-tested resistance on heavy volume reads as a confirmed breakout", () => {
+  // a range between 95 and 105 for 120 bars, then a jump to 108 on three times the volume
+  const bars = series(120, { start: 100, amp: 5, period: 20 });
+  const t = bars.at(-1).time;
+  bars.push({ time: t + 86400, open: 104, high: 108.6, low: 103.8, close: 108, volume: 3000 });
+  const r = readMarket({ "1D": bars });
+  assert.equal(r.breakout?.dir, "up", JSON.stringify(r.breakout));
+  assert.equal(r.breakout.confirmed, true);
+  assert.equal(r.state.key, "breakout");
+  assert.match(r.state.ar, /اختراق/);
+  assert.ok(r.signal.checks.some((c) => c.ar === "اختراق مؤكد لمقاومة" && c.v === 1));
+});
+
+test("the signal balance counts its checks and the plan's numbers hang together", () => {
+  const r = readMarket(all(series(300, { drift: 0.5 })));
+  assert.equal(r.signal.positive + r.signal.negative <= r.signal.of, true);
+  assert.equal(r.signal.checks.length, 8);
+  assert.ok(r.signal.key > 0, r.signal.ar);
+  const f = readMarket(all(series(300, { amp: 5 })));
+  if (f.plan) {
+    assert.ok(f.plan.invalidation < f.price && f.plan.target1 > f.price);
+    assert.ok(f.plan.rr > 0);
+  }
+});
+
+import { clean } from "../public/lib/market-reader.js";
+
+test("a bad print far from its neighbours is dropped before it can become a level", () => {
+  const bars = series(60, { start: 800, amp: 10 });
+  bars[20] = { ...bars[20], high: 107381.5 };
+  const c = clean(bars);
+  assert.equal(c.length, 59);
+  assert.ok(c.every((b) => b.high < 1000));
+});

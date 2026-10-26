@@ -83,6 +83,19 @@ function view(r, sym, main) {
     <div><span>RSI</span><b class="${rsiCls}">${num(r.rsi)}</b></div>
     <div><span>ATR%</span><b class="${r.squeeze ? "mr-blue" : "mr-flat"}">${num(r.atrPct)}%<small>${r.squeeze ? "تقلب منخفض" : "تقلب عادي"}</small></b></div>
   </div>
+  ${r.breakout ? `<div class="mr-break ${r.breakout.dir === "up" ? "mr-up-soft" : r.breakout.dir === "down" ? "mr-dn-soft" : "mr-near"}"><b>${r.breakout.dir === "up" ? "▲ اختراق" : r.breakout.dir === "down" ? "▼ كسر" : r.breakout.dir === "near" ? "◬ قرب اختراق" : "◬ قرب كسر"} ${num(r.breakout.level)}</b><span>${esc(r.breakout.ar)}</span></div>` : ""}
+  ${r.flow ? `<div class="mr-sec">السيولة الداخلة والخارجة <span class="mr-sub">آخر 20 شمعة</span></div>
+  <div class="mr-flowbar"><span class="mr-in" style="width:${r.flow.inflowPct}%">داخلة ${r.flow.inflowPct}%</span><span class="mr-out">خارجة ${r.flow.outflowPct}%</span></div>
+  <div class="mr-row"><span class="mr-k">صافي السيولة</span><b class="mr-wide ${r.flow.net >= 0 ? "mr-up" : "mr-dn"}">${r.flow.net >= 0 ? "داخلة" : "خارجة"} · ${r.flow.improving ? "تتحسن ↑" : "تضعف ↓"} · CMF ${num(r.flow.cmf)}</b></div>` : ""}
+  <div class="mr-sec">ميزان الإشارات الفنية <span class="mr-sub ${r.signal.key > 0 ? "mr-up" : r.signal.key < 0 ? "mr-dn" : "mr-flat"}">${esc(r.signal.ar)} · ${r.signal.positive}✓ ${r.signal.negative}✗</span></div>
+  <ul class="mr-checks">${r.signal.checks.map((c) => `<li class="${c.v > 0 ? "mr-up" : c.v < 0 ? "mr-dn" : "mr-na"}"><i>${c.v > 0 ? "✓" : c.v < 0 ? "✗" : "•"}</i>${esc(c.ar)}</li>`).join("")}</ul>
+  ${r.plan ? `<div class="mr-sec">خطة المستويات</div>
+  <div class="mr-grid">
+    <div><span>منطقة الدخول</span><b class="mr-up"><bdi dir="ltr">${num(r.plan.entryZone.from)} – ${num(r.plan.entryZone.to)}</bdi></b></div>
+    <div><span>إلغاء الفكرة</span><b class="mr-dn">${num(r.plan.invalidation)}<small>-${num(r.plan.riskPct)}%</small></b></div>
+    <div><span>الهدف الأول</span><b class="mr-up">${num(r.plan.target1)}<small>+${num(r.plan.rewardPct)}%</small></b></div>
+    <div><span>العائد : المخاطرة</span><b class="${r.plan.rr >= 2 ? "mr-up" : r.plan.rr < 1 ? "mr-dn" : "mr-flat"}">1 : ${num(r.plan.rr)}</b></div>
+  </div>` : ""}
   <div class="mr-reading">${esc(r.reading)}</div>
   <div class="mr-note">${esc(r.note)} البيانات من مصدر الشارت وقد تتأخر.</div>`;
 }

@@ -91,7 +91,7 @@ export const AGENT_TOOLS = [
     runs: "page",
     read: true,
     description:
-      "The Market Reader (قارئ السوق): one reading of a symbol on seven timeframes (monthly to 15 minutes): the overall trend and how many timeframes agree, each timeframe's trend with its nearest support and resistance, the nearest support and resistance on the main timeframe with touches and distance %, demand and supply zones, where the price sits between them, the market state (accumulation, distribution, breakout, breakdown, trend, squeeze, overbought or oversold), relative volume, RSI, ATR% and a one-line Arabic reading. Use it when someone asks about a symbol's situation, trend, levels or what the timeframes say; quote its numbers, not your own.",
+      "The Market Reader (قارئ السوق): one reading of a symbol on seven timeframes (monthly to 15 minutes): the overall trend and how many timeframes agree, each timeframe's trend with its nearest support and resistance, the nearest support and resistance on the main timeframe with touches and distance %, demand and supply zones, where the price sits between them, the market state (accumulation, distribution, breakout, breakdown, trend, squeeze, overbought or oversold), relative volume, money flow (inflow and outflow %, net, improving or not), a breakout or breakdown (or a near one) with whether volume confirms it, a technical signal balance (eight checks, each positive or negative), a levels plan (entry zone, invalidation, targets, reward to risk), RSI, ATR% and a one-line Arabic reading. Use it when someone asks about a symbol's situation, trend, levels or what the timeframes say; quote its numbers, not your own.",
     input_schema: {
       type: "object",
       properties: {

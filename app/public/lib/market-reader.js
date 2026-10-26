@@ -77,9 +77,23 @@ export function structure(bars, strength = 3) {
   return up ? 1 : dn ? -1 : 0;
 }
 
+// Bars with a high or low far from the closes around them are bad prints (old Yahoo history
+// has some: an NBK.KW month with a high of 107,381 fils). They would become fake levels, so
+// they go; so do bars with no price at all.
+export function clean(bars) {
+  if (!bars?.length) return [];
+  const good = bars.filter((b) => ok(b.close) && ok(b.high) && ok(b.low) && b.close > 0);
+  return good.filter((b, i) => {
+    const near = good.slice(Math.max(0, i - 6), i + 7).map((x) => x.close).sort((x, y) => x - y);
+    const med = near[near.length >> 1];
+    return b.high <= med * 3 && b.low >= med / 3;
+  });
+}
+
 // One timeframe's trend and its nearest levels.
-export function readTimeframe(bars) {
-  if (!bars || bars.length < 30) return null;
+export function readTimeframe(raw) {
+  const bars = clean(raw);
+  if (bars.length < 30) return null;
   const close = bars.map((b) => b.close);
   const e20 = ema(close, 20),
     e50 = ema(close, Math.min(50, Math.max(20, bars.length - 5)));
@@ -104,13 +118,53 @@ export function readTimeframe(bars) {
   return { price, score, trend: band(score), checks, support: sup, resistance: res, ema20: a, ema50: b };
 }
 
+// Money in and out over the last n bars: a bar's traded value (volume × typical price) counts as
+// inflow when its typical price rose from the bar before, outflow when it fell. Also Chaikin
+// Money Flow (where closes sit in their bars, weighted by volume) and whether net flow is
+// improving against the n bars before.
+export function moneyFlow(bars, n = 20) {
+  if (bars.length < n + 2) return null;
+  const tp = (b) => (b.high + b.low + b.close) / 3;
+  const flows = (from, to) => {
+    let inn = 0,
+      out = 0;
+    for (let i = Math.max(1, from); i < to; i++) {
+      const v = (bars[i].volume || 0) * tp(bars[i]);
+      if (tp(bars[i]) > tp(bars[i - 1])) inn += v;
+      else if (tp(bars[i]) < tp(bars[i - 1])) out += v;
+    }
+    return { inn, out };
+  };
+  const now = flows(bars.length - n, bars.length);
+  const before = flows(bars.length - 2 * n, bars.length - n);
+  let mfv = 0,
+    vol = 0;
+  for (const b of bars.slice(-n)) {
+    const range = b.high - b.low;
+    mfv += range > 0 ? (((b.close - b.low) - (b.high - b.close)) / range) * (b.volume || 0) : 0;
+    vol += b.volume || 0;
+  }
+  const total = now.inn + now.out;
+  if (!total) return null;
+  const net = now.inn - now.out,
+    netBefore = before.inn - before.out;
+  return {
+    inflow: now.inn,
+    outflow: now.out,
+    net,
+    inflowPct: Math.round((now.inn / total) * 100),
+    cmf: vol ? Math.round((mfv / vol) * 100) / 100 : 0,
+    improving: net > netBefore,
+  };
+}
+
 const strengthAr = (touches) => (touches >= 4 ? "قوي جدًا" : touches >= 3 ? "قوي" : touches === 2 ? "عادي" : "ضعيف");
 
 // The whole reading. `byTf` maps a timeframe ("1D") to its bars; `main` is the timeframe for the
 // detail block (zones, volume, RSI, state).
 export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
   const frames = READER_TFS.map((f) => ({ ...f, r: readTimeframe(byTf[f.tf]) }));
-  const mainBars = byTf[main] || [];
+  const mainBars = clean(byTf[main]);
   if (mainBars.length < 30) return { symbol, error: "لا توجد بيانات كافية لهذا الإطار." };
   const m = readTimeframe(mainBars);
   const price = m.price;
@@ -155,10 +209,12 @@ export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
   const brokeUp = lv.find((l) => price > l.hi && prior.some((b) => b.close <= l.hi) && l.touches >= 2);
   const brokeDown = lv.find((l) => price < l.lo && prior.some((b) => b.close >= l.lo) && l.touches >= 2);
 
+  // a breakout bar may still be forming: confirm with the stronger of it and the bar before
+  const confirmVol = Math.max(relVol ?? 0, prevVol ?? 0);
   // state, first match wins
   let state, stateKey;
-  if (brokeUp && (relVol ?? 0) >= 1.3) [stateKey, state] = ["breakout", `اختراق ${r1(brokeUp.price)} بسيولة`];
-  else if (brokeDown && (relVol ?? 0) >= 1.3) [stateKey, state] = ["breakdown", `كسر ${r1(brokeDown.price)} بسيولة`];
+  if (brokeUp && confirmVol >= 1.3) [stateKey, state] = ["breakout", `اختراق ${r1(brokeUp.price)} بسيولة`];
+  else if (brokeDown && confirmVol >= 1.3) [stateKey, state] = ["breakdown", `كسر ${r1(brokeDown.price)} بسيولة`];
   else if (brokeUp) [stateKey, state] = ["weakBreakout", `اختراق ${r1(brokeUp.price)} بسيولة ضعيفة`];
   else if (brokeDown) [stateKey, state] = ["weakBreakdown", `كسر ${r1(brokeDown.price)} بسيولة ضعيفة`];
   else if (ok(rsi) && rsi >= 70) [stateKey, state] = ["overbought", "تشبع شرائي"];
@@ -175,6 +231,60 @@ export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
 
   const liq = relVol == null ? "غير متاحة" : relVol >= 1.5 ? "مرتفعة" : relVol >= 0.8 ? "طبيعية" : "ضعيفة";
 
+  // ---------- money flow, breakout, signal balance and a levels plan ----------
+  const flow = moneyFlow(mainBars, 20);
+  const up = brokeUp ? lv.filter((l) => price > l.hi && prior.some((b) => b.close <= l.hi) && l.touches >= 2).sort((a, b) => b.price - a.price)[0] : null;
+  const dn = brokeDown ? lv.filter((l) => price < l.lo && prior.some((b) => b.close >= l.lo) && l.touches >= 2).sort((a, b) => a.price - b.price)[0] : null;
+  let breakout = null;
+  if (up) breakout = { dir: "up", level: r1(up.price), confirmed: confirmVol >= 1.3, ar: confirmVol >= 1.3 ? "اختراق مؤكد بسيولة" : "اختراق بسيولة ضعيفة" };
+  else if (dn) breakout = { dir: "down", level: r1(dn.price), confirmed: confirmVol >= 1.3, ar: confirmVol >= 1.3 ? "كسر مؤكد بسيولة" : "كسر بسيولة ضعيفة" };
+  else if (res && dRes != null && dRes <= Math.max(0.6, (atrPct ?? 1) * 0.6) && (relVol ?? 0) >= 1)
+    breakout = { dir: "near", level: r1(res.price), confirmed: false, ar: `قريب من اختراق ${r1(res.price)}` };
+  else if (sup && dSup != null && dSup <= Math.max(0.6, (atrPct ?? 1) * 0.6) && (relVol ?? 0) >= 1)
+    breakout = { dir: "nearDown", level: r1(sup.price), confirmed: false, ar: `قريب من كسر ${r1(sup.price)}` };
+
+  const mainTrend = TREND[m.trend].dir;
+  const checks = [
+    { ar: "الاتجاه العام صاعد", ok: overall > 0, bad: overall < 0, badAr: "الاتجاه العام هابط" },
+    { ar: `اتجاه الإطار الرئيسي صاعد`, ok: mainTrend > 0, bad: mainTrend < 0, badAr: "اتجاه الإطار الرئيسي هابط" },
+    { ar: "السعر فوق متوسط 20", ok: m.checks.aboveEma20 > 0, bad: m.checks.aboveEma20 < 0, badAr: "السعر تحت متوسط 20" },
+    { ar: "RSI في منطقة قوة (50 - 70)", ok: ok(rsi) && rsi >= 50 && rsi < 70, bad: ok(rsi) && (rsi < 45 || rsi >= 75), badAr: ok(rsi) && rsi >= 75 ? "RSI في تشبع شرائي" : "RSI ضعيف (تحت 45)" },
+    { ar: "السيولة الداخلة أكبر من الخارجة", ok: !!flow && flow.inflowPct >= 55, bad: !!flow && flow.inflowPct <= 45, badAr: "السيولة الخارجة أكبر من الداخلة" },
+    { ar: "صافي السيولة يتحسن", ok: !!flow && flow.improving && flow.net > 0, bad: !!flow && !flow.improving && flow.net < 0, badAr: "صافي السيولة يضعف" },
+    { ar: "اختراق مؤكد لمقاومة", ok: breakout?.dir === "up" && breakout.confirmed, bad: breakout?.dir === "down" && breakout.confirmed, badAr: "كسر مؤكد لدعم" },
+    { ar: "السعر قرب دعم قوي", ok: position === "أقرب إلى الدعم" && (sup?.touches ?? 0) >= 3, bad: position === "أقرب إلى المقاومة" && (res?.touches ?? 0) >= 3, badAr: "السعر قرب مقاومة قوية" },
+  ].map((c) => ({ ar: c.ok ? c.ar : c.bad ? c.badAr : c.ar, v: c.ok ? 1 : c.bad ? -1 : 0 }));
+  const pos = checks.filter((c) => c.v > 0).length,
+    neg = checks.filter((c) => c.v < 0).length;
+  const net = pos - neg;
+  const signal = {
+    positive: pos,
+    negative: neg,
+    of: checks.length,
+    key: net >= 4 ? 2 : net >= 2 ? 1 : net <= -4 ? -2 : net <= -2 ? -1 : 0,
+    checks,
+  };
+  signal.ar = { 2: "إشارات إيجابية قوية", 1: "إشارات إيجابية", 0: "إشارات متعادلة", "-1": "إشارات سلبية", "-2": "إشارات سلبية قوية" }[signal.key];
+
+  // levels, not advice: where the idea would start, where it would be wrong, where it would aim
+  const above = lv.filter((l) => l.price > price + (atrNow || 0) * 0.33).sort((a, b) => a.price - b.price);
+  const t1 = res ? res.price : above[0]?.price;
+  const t2 = above.find((l) => l.price > (t1 ?? price) * 1.003)?.price ?? null;
+  const dz = zone(sup);
+  const invalid = dz ? dz.from - (atrNow || 0) * 0.5 : null;
+  const plan =
+    t1 && invalid && invalid < price
+      ? {
+          entryZone: dz,
+          invalidation: r1(invalid),
+          target1: r1(t1),
+          target2: t2 ? r1(t2) : null,
+          riskPct: r1(((price - invalid) / price) * 100),
+          rewardPct: r1(((t1 - price) / price) * 100),
+          rr: Math.round(((t1 - price) / (price - invalid)) * 10) / 10,
+        }
+      : null;
+
   // the reading, in plain Arabic; descriptive only
   const parts = [`الاتجاه العام ${TREND[overall].ar}`, `${agree} من ${have.length} أطر ${agreeDir > 0 ? "صاعدة" : agreeDir < 0 ? "هابطة" : "محايدة"}`];
   if (stateKey === "accumulation") parts.push("السعر يهدأ قرب الدعم، راقب الثبات فوق " + r1(sup?.price ?? price));
@@ -183,6 +293,7 @@ export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
   else if (stateKey === "breakdown" || stateKey === "weakBreakdown") parts.push(`راقب ${r1(brokeDown.price)} كمقاومة جديدة${stateKey === "weakBreakdown" ? "، السيولة لا تؤكد الكسر بعد" : ""}`);
   else if (position === "أقرب إلى المقاومة" && res) parts.push(`السعر قرب المقاومة ${r1(res.price)} (${r1(dRes)}%)`);
   else if (position === "أقرب إلى الدعم" && sup) parts.push(`السعر قرب الدعم ${r1(sup.price)} (${r1(dSup)}%)`);
+  if (flow) parts.push(`السيولة الداخلة ${flow.inflowPct}% مقابل ${100 - flow.inflowPct}% خارجة`);
   if (liq === "ضعيفة") parts.push("والسيولة ضعيفة");
   else if (liq === "مرتفعة") parts.push("والسيولة مرتفعة");
 
@@ -209,6 +320,10 @@ export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
     atrPct: atrPct == null ? null : Math.round(atrPct * 100) / 100,
     squeeze,
     confidence,
+    flow: flow && { inflowPct: flow.inflowPct, outflowPct: 100 - flow.inflowPct, inflow: flow.inflow, outflow: flow.outflow, net: flow.net, cmf: flow.cmf, improving: flow.improving },
+    breakout,
+    signal,
+    plan,
     reading: parts.join("، ") + ".",
     note: "قراءة وصفية للبيانات، وليست توصية شراء أو بيع.",
   };
