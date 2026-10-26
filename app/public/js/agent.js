@@ -347,6 +347,16 @@ export class AgentTools {
     const r = levels(this.bars(p), { strength: input.strength || 5, lookback: input.lookback || 300 });
     return { label: `Found swings and levels on ${this.name(p.cfg.symbol)}, ${p.cfg.tf}`, result: { symbol: p.cfg.symbol, interval: p.cfg.tf, ...r } };
   }
+  async market_reader(input) {
+    const { loadReading } = await import("./marketreader.js");
+    const p = this.app.active;
+    const sym = input.symbol || p?.cfg.symbol;
+    if (!sym) fail("Open a chart or give a symbol.");
+    const main = input.interval || (["1M", "1W", "1D", "4h", "1h", "30m", "15m"].includes(p?.cfg.tf) ? p.cfg.tf : "1D");
+    const r = await loadReading(sym, main);
+    if (r.error) fail(r.error);
+    return { label: `قرأ السوق: ${this.name(sym)} على 7 أطر`, result: r };
+  }
   async indicator_catalog(input) {
     const q = String(input.query || "").trim().toLowerCase();
     const all = Object.values(BY_ID);

@@ -26,6 +26,7 @@ import { TOOL_BY_ID } from "./drawings.js";
 import { playSound, zoneOf, tzOffset, fmtClock } from "./chartsettings.js";
 import { openAlertDialog as openAlertCard, isChannel, isMoving } from "./alertdialog.js";
 import { PRODUCTS, SOCIAL, ALL_PRODUCTS, DEFAULT_FAVORITES } from "./products.js";
+import { renderReader, readerChanged } from "./marketreader.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const LW = window.LightweightCharts;
@@ -231,6 +232,15 @@ export function initPanels(app) {
   // ---------- the right toolbar ----------
   // Watchlist, Alerts and Object tree at the top; at the bottom the starred products, the Products
   // menu (star or unstar each one) and Help. Each button has TradingView's dark tooltip to its left.
+  // A toolbar someone already arranged gets the Market Reader once, after AskCharts AI.
+  if (Array.isArray(app.settings.railFavorites) && !app.settings.readerOnRail) {
+    if (!app.settings.railFavorites.includes("reader")) {
+      const at = app.settings.railFavorites.indexOf("copilot") + 1;
+      app.settings.railFavorites.splice(at, 0, "reader");
+    }
+    app.settings.readerOnRail = true;
+    app.persist();
+  }
   const favorites = () => (Array.isArray(app.settings.railFavorites) ? app.settings.railFavorites : DEFAULT_FAVORITES);
   const svg28 = (body) => `<svg viewBox="0 0 28 28">${body}</svg>`;
   const openProduct = (p) => (p.panel ? showSide(p.panel, true) : showBottom(p.bottom));
@@ -422,6 +432,7 @@ export function initPanels(app) {
       calendar: renderCalendar,
       pine: () => app.pineEditor.mount(side),
       copilot: () => app.copilot.mount(side),
+      reader: () => renderReader(side, app),
       notifications: renderNotifications,
       news: () => {
         side.innerHTML = '<div class="sp-head"><span class="sp-name">News</span></div><div id="newsBody"></div>';
@@ -2596,6 +2607,7 @@ export function initPanels(app) {
       obSig = "";
       drawObjects();
     }
+    if (sideTab === "reader" && readerChanged(app)) renderSide();
     if (sym !== lastSymbol) {
       lastSymbol = sym;
       if (sideTab === "news") renderSide();

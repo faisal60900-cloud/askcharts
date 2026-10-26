@@ -87,6 +87,20 @@ export const AGENT_TOOLS = [
     },
   },
   {
+    name: "market_reader",
+    runs: "page",
+    read: true,
+    description:
+      "The Market Reader (قارئ السوق): one reading of a symbol on seven timeframes (monthly to 15 minutes): the overall trend and how many timeframes agree, each timeframe's trend with its nearest support and resistance, the nearest support and resistance on the main timeframe with touches and distance %, demand and supply zones, where the price sits between them, the market state (accumulation, distribution, breakout, breakdown, trend, squeeze, overbought or oversold), relative volume, RSI, ATR% and a one-line Arabic reading. Use it when someone asks about a symbol's situation, trend, levels or what the timeframes say; quote its numbers, not your own.",
+    input_schema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "EXCHANGE:TICKER from market_search. Leave out for the active chart's symbol." },
+        interval: { type: "string", enum: ["1M", "1W", "1D", "4h", "1h", "30m", "15m"], description: "The main timeframe for levels, zones and state (default: the active chart's, or 1D)." },
+      },
+    },
+  },
+  {
     name: "indicator_catalog",
     runs: "page",
     read: true,

@@ -673,7 +673,8 @@ const YAHOO_NATIVE = {
   "30m": ["30m", "60d"],
   "1h": ["60m", "730d"],
   "1D": ["1d", "20y"],
-  "1W": ["1wk", "max"],
+  // range "max" makes Yahoo hand back monthly bars for a weekly request (KFH.KW, Oct 2026)
+  "1W": ["1wk", "10y"],
   "1M": ["1mo", "max"],
 };
 export const yahooAvailable = () => Date.now() > yahooDownUntil;
