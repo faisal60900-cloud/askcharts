@@ -23,6 +23,7 @@ import * as feeds from "./feeds.js";
 import * as imports from "./imports.js";
 import * as history from "./history.js";
 import * as store from "./store.js";
+import { searchGulf, resolveGulfName } from "./gulf.js";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -253,6 +254,9 @@ export async function resolve(raw) {
     .toUpperCase()
     .replace(/\s+/g, "");
   if (!input) throw badInput("Empty symbol");
+  // A Kuwaiti or Saudi stock typed by its Arabic name ("بيتك", "زين"): its Yahoo symbol.
+  const gulf = resolveGulfName(input);
+  if (gulf) return gulf;
   // NQ1!, CME_MINI:NQ1!, MNQ: futures. A bare root that is also a US stock ticker (ES) stays the stock.
   const fut = /^(CME(?:_MINI)?:)?([A-Z]{2,3})(1!)?$/.exec(input);
   if (fut && FUTURES[fut[2]] && (fut[1] || fut[3] || !(await usTickerSet()).has(fut[2])))
@@ -1508,6 +1512,8 @@ export async function search(q) {
           exchange: "FX",
         });
     }
+  // Boursa Kuwait and Tadawul by ticker, English or Arabic name, ahead of Yahoo's own (same symbols, deduped below).
+  results.push(...searchGulf(q));
   if (!OFFLINE) {
     const tasks = [
       getJson(
@@ -1560,6 +1566,8 @@ export async function search(q) {
     const t = r.symbol.slice(r.symbol.indexOf(":") + 1).replace(/1!$/, ""),
       base = r.name.split(" / ")[0].toUpperCase();
     if (r.exchange === "FX") return t === query || t === `${query}USD` || base === query ? 2 : 0;
+    // NBK finds NBK.KW, 2222 finds 2222.SR: a Gulf ticker typed without its market suffix is still exact.
+    if (/\.(KW|SR)$/.test(t) && t.split(".")[0] === query) return 1;
     return t === query || (r.type === "crypto" && base === coin) ? 1 : 0;
   };
   const seen = new Set();

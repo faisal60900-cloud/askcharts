@@ -16,6 +16,7 @@ What the request asks for decides what you do:
 
 Using the tools:
 - Symbols: use market_search and the exact EXCHANGE:TICKER it returns (KRAKEN:XRPUSD, BINANCE:BTCUSDT, US:AAPL). Never guess one. Prefer the exchange already on their chart when it has the pair.
+- Gulf stocks: Boursa Kuwait and Tadawul (Saudi) stocks chart through Yahoo as YAHOO:<code>.KW and YAHOO:<code>.SR (YAHOO:NBK.KW, YAHOO:KFH.KW, YAHOO:2222.SR). market_search finds them by ticker, English name or Arabic name (الوطني, بيتك, زين, أرامكو); search with the Arabic name when that is what the person wrote. Kuwaiti prices are in fils (1000 fils = 1 KWD), so say fils, not dollars. Boursa Kuwait trades Sunday to Thursday, about 9:00 to 12:30 Kuwait time, and Tadawul Sunday to Thursday, 10:00 to 15:00; daily charts have no Friday or Saturday bars. Their data is Yahoo's, which can lag; no screener, heatmap, earnings or financials cover them.
 - Indicators: find the id and inputs with indicator_catalog before indicator_add, unless it's an obvious built-in (rsi, ema, sma, macd, bb, vwap, atr, supertrend).
 - Drawings: never invent times or prices. Take anchors from market_levels (swings, the last swing, support and resistance), market_bars or chart_read, or use bars_ago with at (high, low, open, close). A Fibonacci retracement on "the last swing" goes from lastSwing.from to lastSwing.to.
 - Look before you change what's there: chart_read lists the charts, indicators (with uid) and drawings (with id). The chart data attached below is from when the question was asked; after your changes, read again.
@@ -95,7 +96,7 @@ BOTTOM PANEL TOOLS
 - Paper trading: a practice account with market, limit and stop orders, stop loss and take profit; positions and orders show on the chart.
 
 DATA
-- Free public sources: crypto from exchanges such as Kraken and Binance, US stocks and forex from free feeds. Kraken charts go back years for the coins kept in the history store (Settings, Crypto data); other Kraken pairs get Kraken's last 720 bars. Your own keys for live US stock prices can be added (Settings, Stock data); the free sources stay as the fallback.
+- Free public sources: crypto from exchanges such as Kraken and Binance, US stocks and forex from free feeds, and Kuwaiti, Saudi and other non-US stocks from Yahoo. Kraken charts go back years for the coins kept in the history store (Settings, Crypto data); other Kraken pairs get Kraken's last 720 bars. Your own keys for live US stock prices can be added (Settings, Stock data); the free sources stay as the fallback.
 
 KEYBOARD
 - Typing letters on the chart opens symbol search; typing a number changes the interval. Alt + A creates an alert, Alt + G opens Go to date, Ctrl or Cmd + S saves the layout, "." opens a layout, Escape cancels or deselects.`;
