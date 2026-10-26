@@ -53,7 +53,7 @@ function view(r, sym, main) {
   const lvl = (label, l, kind) =>
     `<button class="mr-row mr-click ${kind === "s" ? "mr-up-soft" : "mr-dn-soft"}" data-draw="${kind}" data-price="${l?.price ?? ""}" ${l ? "" : "disabled"} title="اضغط لرسم الخط على الشارت">
       <span class="mr-k">${label}</span><b>${num(l?.price)}</b><span class="mr-str">${l ? `${esc(l.strength)} <small>(${l.touches})</small>` : "—"}</span><span class="mr-pct">${l ? num(l.distancePct) + "%" : ""}</span></button>`;
-  const zone = (label, z, kind) => `<div class="mr-row ${kind === "s" ? "mr-up-soft" : "mr-dn-soft"}"><span class="mr-k">${label}</span><b class="mr-wide">${z ? `${num(z.from)} – ${num(z.to)}` : "—"}</b></div>`;
+  const zone = (label, z, kind) => `<div class="mr-row ${kind === "s" ? "mr-up-soft" : "mr-dn-soft"}"><span class="mr-k">${label}</span><b class="mr-wide">${z ? `<bdi dir="ltr">${num(z.from)} – ${num(z.to)}</bdi>` : "—"}</b></div>`;
   const rsiCls = r.rsi == null ? "mr-flat" : r.rsi >= 70 ? "mr-dn" : r.rsi <= 30 ? "mr-up" : "mr-flat";
   const liqCls = r.liquidity.ar === "ضعيفة" ? "mr-dn" : r.liquidity.ar === "مرتفعة" ? "mr-up" : "mr-flat";
   return `
@@ -93,6 +93,7 @@ export function renderReader(side, app) {
     main = mainTfOf(p?.cfg.tf);
   side.innerHTML = `<div class="sp-fill" id="mrRoot" dir="rtl">
     <div class="sp-head"><span class="sp-name">قارئ السوق</span><span class="spacer" style="flex:1"></span>
+      <button class="btn small${app.settings.readerOverlay ? " primary" : ""}" id="mrOverlay" title="اعرض القراءة فوق الشارت مثل جدول المؤشر">${app.settings.readerOverlay ? "✓ " : ""}على الشارت</button>
       <button class="btn small" id="mrDraw" title="ارسم الدعم والمقاومة ومناطق العرض والطلب على الشارت">ارسم على الشارت</button>
       <button class="sp-icon" id="mrRefresh" title="تحديث"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg></button>
     </div>
@@ -148,6 +149,7 @@ export function renderReader(side, app) {
     if (items.length) draw(items);
   };
   side.querySelector("#mrRefresh").onclick = () => load(true);
+  side.querySelector("#mrOverlay").onclick = () => app.readerOverlay?.set(!app.settings.readerOverlay);
   load();
   clearInterval(timer);
   timer = setInterval(() => {

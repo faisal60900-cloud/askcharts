@@ -27,6 +27,7 @@ import { playSound, zoneOf, tzOffset, fmtClock } from "./chartsettings.js";
 import { openAlertDialog as openAlertCard, isChannel, isMoving } from "./alertdialog.js";
 import { PRODUCTS, SOCIAL, ALL_PRODUCTS, DEFAULT_FAVORITES } from "./products.js";
 import { renderReader, readerChanged } from "./marketreader.js";
+import { initReaderOverlay } from "./readeroverlay.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const LW = window.LightweightCharts;
@@ -2636,5 +2637,7 @@ export function initPanels(app) {
   };
   renderRail();
   showSide(sideTab);
+  app.readerOverlay = initReaderOverlay(app);
+  app.onReaderOverlay = () => sideTab === "reader" && renderSide();
   return P;
 }
