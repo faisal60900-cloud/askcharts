@@ -243,6 +243,16 @@ export function kuwaitSessionFraction(barTime, now = Date.now()) {
   return Math.min(1, Math.max(0.05, (min - 9 * 60) / 220));
 }
 
+// The same for the US session (9:30-16:00 New York time, Monday to Friday, summer time included).
+export function usSessionFraction(barTime, now = Date.now()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(now)).map((p) => [p.type, p.value]));
+  const today = `${parts.year}-${parts.month}-${parts.day}`;
+  // daily bars are stamped at midnight or the open, UTC: their UTC date is the session's date
+  if (new Date(barTime * 1000).toISOString().slice(0, 10) !== today) return 1;
+  const min = Number(parts.hour) * 60 + Number(parts.minute);
+  return Math.min(1, Math.max(0.05, (min - (9 * 60 + 30)) / 390));
+}
+
 export function readMarket(byTf, { main = "1D", symbol = "", sessionFraction = 1 } = {}) {
   const frames = READER_TFS.map((f) => ({ ...f, r: readTimeframe(byTf[f.tf]) }));
   const mainBars = clean(byTf[main]);

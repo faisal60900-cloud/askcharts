@@ -455,6 +455,7 @@ export function initPanels(app) {
       ({
         tester: renderTester,
         kwscan: () => renderKwScan(bottom, app),
+        usscan: () => renderKwScan(bottom, app, "us"),
         screener: renderScreener,
         heatmap: renderHeatmap,
         seasonals: () => renderSeasonals(bottom, app),

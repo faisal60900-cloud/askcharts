@@ -1,6 +1,6 @@
 // ماسح السوق الكويتي: one row per stock from its daily bars, read with the Market Reader, and the
 // filters the scan offers. Pure numbers in and out, so it can be tested without a page.
-import { readMarket, kuwaitSessionFraction, readTimeframe } from "./market-reader.js";
+import { readMarket, kuwaitSessionFraction, usSessionFraction, readTimeframe } from "./market-reader.js";
 import { resample } from "./series.js";
 
 // Average daily traded value over the last n sessions, in the stock's own money (Kuwaiti bars
@@ -47,7 +47,8 @@ function weekTrend(bars) {
 }
 
 // One stock: its reading on the daily bars, flattened into what the table and filters need.
-export function scanRow(stock, bars, now = Date.now()) {
+// market "kw" (prices in fils, Boursa Kuwait's session) or "us" (dollars, New York's session)
+export function scanRow(stock, bars, now = Date.now(), { market = "kw" } = {}) {
   if (!bars || bars.length < 60) return { ...stock, error: "لا توجد بيانات كافية" };
   // A session that has only just opened has a candle with almost no volume, which would read as
   // "no liquidity" everywhere: read the last completed session instead, and say so.
@@ -55,7 +56,7 @@ export function scanRow(stock, bars, now = Date.now()) {
   const avg = vols.reduce((a, v) => a + v, 0) / Math.max(1, vols.length);
   const early = avg > 0 && (bars.at(-1).volume || 0) < avg * 0.1;
   if (early) bars = bars.slice(0, -1);
-  const r = readMarket({ "1D": bars }, { main: "1D", symbol: stock.symbol, sessionFraction: early ? 1 : kuwaitSessionFraction(bars.at(-1).time, now) });
+  const r = readMarket({ "1D": bars }, { main: "1D", symbol: stock.symbol, sessionFraction: early || !now ? 1 : (market === "us" ? usSessionFraction : kuwaitSessionFraction)(bars.at(-1).time, now) });
   if (r.error) return { ...stock, error: r.error };
   const last = bars.at(-1),
     prev = bars.at(-2);
@@ -63,7 +64,7 @@ export function scanRow(stock, bars, now = Date.now()) {
     ...stock,
     price: r.price,
     changePct: prev?.close ? Math.round(((last.close - prev.close) / prev.close) * 1000) / 10 : null,
-    value: Math.round(tradedValue(bars)),
+    value: Math.round(tradedValue(bars, 20, market !== "us")),
     trend: r.overall,
     state: r.state,
     breakout: r.breakout,

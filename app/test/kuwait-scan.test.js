@@ -94,3 +94,16 @@ test("a break on a thin bar isn't confirmed by a busy bar before it", () => {
   assert.equal(r.breakout.confirmed, false, "0.6x on the breaking bar");
   assert.equal(r.entry, false);
 });
+
+import { usSessionFraction } from "../public/lib/market-reader.js";
+
+test("US stocks: values in dollars, and today's volume measured against New York's session", () => {
+  const now = Date.UTC(2026, 9, 27, 15, 30); // 11:30 in New York
+  const f = usSessionFraction(Date.UTC(2026, 9, 27) / 1000, now);
+  assert.ok(f > 0.28 && f < 0.34, `${f}`);
+  assert.equal(usSessionFraction(Date.UTC(2026, 9, 26) / 1000, now), 1);
+  const bars = range(200, { start: 50, amp: 2, vol: 1e6 });
+  const us = scanRow({ code: "TST", symbol: "US:TST", en: "Test", ar: null }, bars, 0, { market: "us" });
+  assert.ok(us.value > 4e7 && us.value < 6e7, `${us.value} dollars a day`);
+  assert.ok(scanRow(stock, bars, 0).value < 1e5, "the same bars read as fils are dinars");
+});
