@@ -161,6 +161,7 @@ export function renderKwScan(box, app) {
     <label class="field">أقل قيمة تداول يومية (د.ك)<input id="kwMin" type="number" min="0" step="1000" value="${st.minValue}" style="width:110px"></label>
     <button class="btn ${st.entryOnly ? "primary" : ""}" id="kwEntry" title="${ENTRY_RULES.map((k) => FILTERS[k].ar).join(" + ")}">${st.entryOnly ? "✓ " : ""}إشارات دخول شراء فقط</button>
   </div>
+  <div class="kw-watch" id="kwWatch"></div>
   <div class="row-flex kw-chips">${Object.entries(FILTERS)
     .map(([k, f]) => `<label class="kw-chip ${st.on.has(k) ? "on" : ""}"><input type="checkbox" data-fl="${k}" ${st.on.has(k) ? "checked" : ""} ${st.entryOnly ? "disabled" : ""}>${esc(f.ar)}</label>`)
     .join("")}</div></div>
@@ -207,4 +208,56 @@ export function renderKwScan(box, app) {
   });
   prog();
   table();
+  watchBox();
+
+  // 🔔 the server-side watch: it scans during the session and sends each new entry signal
+  async function watchBox() {
+    const el = box.querySelector("#kwWatch");
+    if (!el) return;
+    let w;
+    try {
+      w = await api.get("/api/kwwatch");
+    } catch {
+      el.innerHTML = '<span class="hint-text">التنبيه التلقائي يحتاج إعادة تشغيل البرنامج مرة وحدة.</span>';
+      return;
+    }
+    const when = w.lastRun ? new Date(w.lastRun).toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit" }) : "—";
+    el.innerHTML = `<div class="row-flex">
+      <button class="btn ${w.on ? "primary" : ""}" id="kwWOn">${w.on ? "🔔 التنبيه التلقائي شغال" : "🔕 شغّل التنبيه التلقائي"}</button>
+      <label class="field">كل<select id="kwWEvery">${[5, 10, 15, 30].map((m) => `<option value="${m}" ${m === w.every ? "selected" : ""}>${m} دقيقة</option>`).join("")}</select></label>
+      <label class="kw-chip ${w.afterClose ? "on" : ""}"><input type="checkbox" id="kwWClose" ${w.afterClose ? "checked" : ""}>مسح بعد الإغلاق</label>
+      <button class="btn" id="kwWNow">افحص الآن وأرسل</button>
+      <button class="btn" id="kwWPhone">📱 للجوال</button>
+    </div>
+    <div class="hint-text">${w.on ? `يمسح السوق كل ${w.every} دقيقة من الأحد للخميس 9:00–12:45${w.afterClose ? " ومرة بعد الإغلاق" : ""}، ويرسل تنبيه لكل إشارة دخول جديدة (مرة وحدة لكل سهم في اليوم).` : "شغّله ليمسح السوق خلال الجلسة ويرسل لك تنبيه بأي إشارة دخول جديدة، حتى لو المتصفح مقفل."} السوق الحين ${w.sessionOpen ? '<b class="up">مفتوح</b>' : "مغلق"} · آخر مسح ${when}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}${w.webhook ? " · 📱 الإرسال للجوال مفعّل" : ""}</div>
+    <div id="kwWPhoneBox" hidden class="kw-phone"><label class="field">رابط الإرسال (Telegram أو Discord أو Slack)<input id="kwWHook" value="${esc(w.webhook || "")}" placeholder="https://api.telegram.org/bot…/sendMessage?chat_id=…" style="width:340px" dir="ltr"></label><button class="btn" id="kwWHookSave">حفظ</button></div>`;
+    const post = async (patch) => {
+      try {
+        await api.post("/api/kwwatch", patch);
+      } catch (e) {
+        app.toast?.(e.message);
+      }
+      watchBox();
+    };
+    el.querySelector("#kwWOn").onclick = async () => {
+      if (!w.on && "Notification" in window && Notification.permission === "default") await Notification.requestPermission().catch(() => {});
+      post({ on: !w.on, minValue: st.minValue });
+    };
+    el.querySelector("#kwWEvery").onchange = (e) => post({ every: Number(e.target.value) });
+    el.querySelector("#kwWClose").onchange = (e) => post({ afterClose: e.target.checked });
+    el.querySelector("#kwWPhone").onclick = () => (el.querySelector("#kwWPhoneBox").hidden = !el.querySelector("#kwWPhoneBox").hidden);
+    el.querySelector("#kwWHookSave").onclick = () => post({ webhook: el.querySelector("#kwWHook").value });
+    el.querySelector("#kwWNow").onclick = async (e) => {
+      e.target.disabled = true;
+      e.target.textContent = "جاري المسح…";
+      try {
+        await api.post("/api/kwwatch", { minValue: st.minValue });
+        const r = await api.post("/api/kwwatch/run");
+        app.toast?.(r.sent ? `أُرسلت ${r.sent} إشارة دخول جديدة.` : r.entries ? `${r.entries} إشارة دخول، وكلها أُرسلت لك سابقًا اليوم.` : `مسح ${r.scanned} سهم: لا توجد إشارة دخول الآن.`);
+      } catch (err) {
+        app.toast?.(err.message);
+      }
+      watchBox();
+    };
+  }
 }

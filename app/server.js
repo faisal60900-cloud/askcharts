@@ -14,6 +14,7 @@ import * as data from "./lib/providers.js";
 import * as feeds from "./lib/feeds.js";
 import * as imports from "./lib/imports.js";
 import * as alerts from "./lib/alerts.js";
+import * as kwwatch from "./lib/kwwatch.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
 import * as copilot from "./lib/copilot.js";
@@ -435,6 +436,12 @@ async function handle(req, res) {
       if (req.method === "POST")
         return send(res, 200, alerts.add(await readBody(req)));
     }
+    // ---------- the Kuwait market watch: settings, and a scan now ----------
+    if (p === "/api/kwwatch") {
+      if (req.method === "GET") return send(res, 200, kwwatch.settings());
+      if (req.method === "POST") return send(res, 200, kwwatch.update(await readBody(req, 1e4)));
+    }
+    if (p === "/api/kwwatch/run" && req.method === "POST") return send(res, 200, await kwwatch.runOnce());
     if (p === "/api/alerts/log") return send(res, 200, alerts.history());
     if (p === "/api/alerts/check" && req.method === "POST") {
       await alerts.evaluate();
@@ -611,6 +618,7 @@ if (isMain) {
   const { port } = await start();
   const url = `http://localhost:${port}`;
   alerts.start();
+  kwwatch.start();
   console.log(
     `\n  AskCharts ${VERSION} is running\n\n  Open:  ${url}\n  Stop:  Ctrl+C\n  Data:  ${store.DATA_DIR}\n`,
   );

@@ -190,6 +190,25 @@ async function fire(a, bar, price) {
   for (const fn of listeners) fn(event);
 }
 
+// A notification that isn't one of the alerts above (the Kuwait market watch): the same log, the
+// same pop-up, sound and desktop notice in the page, and the same webhook delivery.
+export async function notify({ symbol = "", name = "", text, webhook = "", notify: n = null }) {
+  const event = { id: crypto.randomUUID(), alertId: null, symbol, tf: "1D", name, text: name ? `${name}: ${text}` : text, notify: n, at: new Date().toISOString() };
+  if (webhook) {
+    try {
+      await sendWebhook(webhook, event.text, { event });
+      event.webhook = "sent";
+    } catch (e) {
+      event.webhook = `failed: ${e.message}`;
+    }
+  }
+  log.unshift(event);
+  log = log.slice(0, 500);
+  store.write("alert-log", log);
+  for (const fn of listeners) fn(event);
+  return event;
+}
+
 // One evaluation at a time: the timer and a manual "check now" must not both fire a "once" alert.
 let running = null;
 // XRPL On chain indicators read the XRP Ledger store. The chart hands them its buckets (one per bar, an hour
