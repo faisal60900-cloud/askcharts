@@ -24,6 +24,7 @@ export const FILTERS = {
   weeklyUp: { ar: "الاتجاه الأسبوعي صاعد", test: (r) => (r.weekly ?? 0) > 0 },
   rsiZone: { ar: "RSI بين 50 و70", test: (r) => r.rsi >= 50 && r.rsi < 70 },
   strongClose: { ar: "إغلاق قرب قمة اليوم", test: (r) => (r.closePos ?? 0) >= 0.7 },
+  vol2: { ar: "سيولة الاختراق 2x فأكثر", test: (r) => (r.breakout?.vol ?? 0) >= 2 },
 };
 
 // The breakout signal: a confirmed breakout, money coming in, buying ahead and the checks leaning
@@ -35,7 +36,15 @@ export const BASE_RULES = ["breakout", "inflow", "buying", "signals"];
 export const ENTRY_RULES = [...BASE_RULES, "weeklyUp", "rsiZone", "strongClose"];
 // the trailing stop: the highest price since entry minus this many ATRs
 export const TRAIL_ATR = 2.5;
-export const isEntry = (row) => ENTRY_RULES.every((k) => FILTERS[k].test(row));
+// The US: tested on the 300 most traded large US stocks from 2022 (lib/kwbacktest.js). Kuwait's
+// week/RSI/close conditions did worse there; what held in both the choosing years (2022-2024) and
+// the checking years (2025-2026) was a breakout on twice the usual volume or more, with a wider
+// trailing stop (3 ATR): +1.65% and +1.68% a trade after costs.
+export const US_ENTRY_RULES = [...BASE_RULES, "vol2"];
+export const US_TRAIL_ATR = 3;
+export const US_LIVE = { variant: "vol2", exit: "trail3" };
+export const entryRules = (market) => (market === "us" ? US_ENTRY_RULES : ENTRY_RULES);
+export const isEntry = (row, market = row?.market || "kw") => entryRules(market).every((k) => FILTERS[k].test(row));
 export const isBaseSignal = (row) => BASE_RULES.every((k) => FILTERS[k].test(row));
 
 const closePos = (b) => (b && b.high > b.low ? Math.round(((b.close - b.low) / (b.high - b.low)) * 100) / 100 : 0.5);
@@ -82,7 +91,8 @@ export function scanRow(stock, bars, now = Date.now(), { market = "kw" } = {}) {
     // the week trend from the weeks that have closed (this week's is still forming)
     weekly: weekTrend(bars),
     closePos: closePos(bars.at(-1)),
-    trail: r.atrPct && r.price ? { atr: TRAIL_ATR, dist: Math.round(((r.atrPct * r.price) / 100) * TRAIL_ATR * 100) / 100 } : null,
+    market,
+    trail: r.atrPct && r.price ? { atr: market === "us" ? US_TRAIL_ATR : TRAIL_ATR, dist: Math.round(((r.atrPct * r.price) / 100) * (market === "us" ? US_TRAIL_ATR : TRAIL_ATR) * 100) / 100 } : null,
   };
   // one number to sort by: what the filters reward, with volume as the tie breaker
   row.score =

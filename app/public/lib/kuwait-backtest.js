@@ -40,6 +40,7 @@ export const EXITS = {
   hold10: { ar: "الاحتفاظ 10 جلسات مع الوقف", max: 10 },
   trail: { ar: "وقف متحرك يلحق السعر (2.5 ATR)", trail: 2.5, max: 40 },
   trailT1: { ar: "نصف عند الهدف الأول والباقي بوقف متحرك", half: true, trail: 2.5, max: 40 },
+  trail3: { ar: "وقف متحرك أوسع (3 ATR)", trail: 3, max: 60 },
 };
 
 export function simulate(bars, i, entry, stop, atrAtEntry, t1, x) {
@@ -68,13 +69,33 @@ export function simulate(bars, i, entry, stop, atrAtEntry, t1, x) {
   return done(bars[last].close, "timeout", last);
 }
 
+// The US market: more money, stronger momentum (strong stocks often stay above RSI 70) and a big
+// part of every move is the whole market's. These sets test that.
+const usLiquid = (e) => e.value >= 100e6;
+export const VARIANTS_US = {
+  base: { ar: "الشروط الأساسية", test: () => true },
+  marketUp: { ar: "+ السوق صاعد (S&P 500 فوق متوسط 50)", test: (e) => e.marketUp },
+  weeklyUp: { ar: "+ الاتجاه الأسبوعي صاعد", test: (e) => e.weekly > 0 },
+  rsi5580: { ar: "+ RSI بين 55 و80", test: (e) => e.rsi >= 55 && e.rsi < 80 },
+  rsi5070: { ar: "+ RSI بين 50 و70", test: (e) => e.rsi >= 50 && e.rsi < 70 },
+  vol2: { ar: "+ سيولة الاختراق 2x فأكثر", test: (e) => e.breakVol >= 2 },
+  vol3: { ar: "+ سيولة الاختراق 3x فأكثر", test: (e) => e.breakVol >= 3 },
+  liquid: { ar: "+ تداول 100 مليون $ يوميًا فأكثر", test: usLiquid },
+  strongClose: { ar: "+ إغلاق قرب قمة اليوم", test: (e) => e.closePos >= 0.7 },
+  kwCombo: { ar: "شروط الكويت (أسبوعي + RSI 50-70 + إغلاق قوي)", test: (e) => e.weekly > 0 && e.rsi >= 50 && e.rsi < 70 && e.closePos >= 0.7 },
+  momentum: { ar: "السوق صاعد + أسبوعي صاعد + RSI 55-80", test: (e) => e.marketUp && e.weekly > 0 && e.rsi >= 55 && e.rsi < 80 },
+  momentumVol: { ar: "السوق صاعد + أسبوعي صاعد + سيولة 2x + إغلاق قوي", test: (e) => e.marketUp && e.weekly > 0 && e.breakVol >= 2 && e.closePos >= 0.7 },
+  marketWeekly: { ar: "السوق صاعد + أسبوعي صاعد", test: (e) => e.marketUp && e.weekly > 0 },
+};
+
 // A cheap test first: a confirmed breakout needs an up day on 1.3x volume within the last 3 bars.
 function maybe(bars, i, avgVol) {
   for (let j = i; j > i - 3 && j > 0; j--) if (bars[j].close > bars[j - 1].close && avgVol[j] > 0 && bars[j].volume >= avgVol[j] * 1.3) return true;
   return false;
 }
 
-export function signalsFor(stock, bars) {
+// `index`: the market's own daily bars (SPY for the US), for "is the whole market going up".
+export function signalsFor(stock, bars, { market = "kw", index = null } = {}) {
   const out = [];
   if (!bars || bars.length < WINDOW + HOLD) return out;
   const n = bars.length;
@@ -84,10 +105,16 @@ export function signalsFor(stock, bars) {
   const e50 = ema(closes, 50),
     rsi = rsiOf(closes, 14);
   const weeks = resample(bars, "1W");
+  const day = (t) => new Date(t * 1000).toISOString().slice(0, 10);
+  let up = null;
+  if (index?.length) {
+    const ie = ema(index.map((b) => b.close), 50);
+    up = new Map(index.map((b, k) => [day(b.time), b.close > (ie[k] || Infinity)]));
+  }
   let lastSignal = -Infinity;
   for (let i = WINDOW; i < n - 1; i++) {
     if (i - lastSignal < 10 || !maybe(bars, i, avgVol)) continue;
-    const row = scanRow(stock, bars.slice(i - WINDOW + 1, i + 1), 0); // 0: a past day, read as a full session
+    const row = scanRow(stock, bars.slice(i - WINDOW + 1, i + 1), 0, { market }); // 0: a past day, read as a full session
     if (!isBaseSignal(row) || !row.plan) continue;
     lastSignal = i;
     const b = bars[i];
@@ -120,6 +147,7 @@ export function signalsFor(stock, bars) {
       value: row.value,
       closePos: range > 0 ? Math.round(((b.close - b.low) / range) * 100) / 100 : 0.5,
       aboveEma50: b.close > (e50[i] || Infinity),
+      marketUp: up ? !!up.get(day(b.time)) : true,
       rr: row.plan.targets[0].rr,
     });
   }
@@ -159,11 +187,11 @@ export function stats(events, exit = null) {
 export const SPLIT = Date.UTC(2025, 0, 1) / 1000;
 // the rules and exit the scanner and the alerts use (kuwait-scan.js ENTRY_RULES and TRAIL_ATR)
 export const LIVE = { variant: "combo", exit: "trail" };
-export function compare(events) {
+export function compare(events, { variants = VARIANTS, live = LIVE } = {}) {
   const train = events.filter((e) => e.time < SPLIT),
     check = events.filter((e) => e.time >= SPLIT);
   const grid = {};
-  for (const [v, V] of Object.entries(VARIANTS))
+  for (const [v, V] of Object.entries(variants))
     for (const x of Object.keys(EXITS)) {
       const tr = stats(train.filter(V.test), x),
         ck = stats(check.filter(V.test), x);
@@ -174,16 +202,16 @@ export function compare(events) {
     .filter((g) => g.train.n >= 100)
     .sort((a, b) => b.train.avgRet - a.train.avgRet)[0];
   const byVariant = {};
-  for (const [k, v] of Object.entries(VARIANTS)) byVariant[k] = { ar: v.ar, ...stats(events.filter(v.test)) };
+  for (const [k, v] of Object.entries(variants)) byVariant[k] = { ar: v.ar, ...stats(events.filter(v.test)) };
   const yearsOf = (es) => {
     const y = {};
     for (const e of es) (y[new Date(e.time * 1000).getUTCFullYear()] ||= []).push(e);
     return y;
   };
   const byYear = Object.fromEntries(Object.entries(yearsOf(events)).map(([y, es]) => [y, stats(es)]));
-  const bestByYear = best ? Object.fromEntries(Object.entries(yearsOf(events.filter(VARIANTS[best.variant].test))).map(([y, es]) => [y, stats(es, best.exit)])) : null;
+  const bestByYear = best ? Object.fromEntries(Object.entries(yearsOf(events.filter(variants[best.variant].test))).map(([y, es]) => [y, stats(es, best.exit)])) : null;
   // what the live alerts use now: the combo rules with the trailing stop
-  const liveEv = events.filter(VARIANTS[LIVE.variant].test);
-  const live = { ...LIVE, all: stats(liveEv, LIVE.exit), train: stats(liveEv.filter((e) => e.time < SPLIT), LIVE.exit), check: stats(liveEv.filter((e) => e.time >= SPLIT), LIVE.exit), byYear: Object.fromEntries(Object.entries(yearsOf(liveEv)).map(([y, es]) => [y, stats(es, LIVE.exit)])) };
-  return { byVariant, byYear, grid, best, bestByYear, live };
+  const liveEv = live && variants[live.variant] ? events.filter(variants[live.variant].test) : [];
+  const liveStats = live && variants[live.variant] ? { ...live, all: stats(liveEv, live.exit), train: stats(liveEv.filter((e) => e.time < SPLIT), live.exit), check: stats(liveEv.filter((e) => e.time >= SPLIT), live.exit), byYear: Object.fromEntries(Object.entries(yearsOf(liveEv)).map(([y, es]) => [y, stats(es, live.exit)])) } : null;
+  return { byVariant, byYear, grid, best, bestByYear, live: liveStats };
 }

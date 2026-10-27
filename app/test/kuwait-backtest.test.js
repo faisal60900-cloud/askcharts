@@ -34,7 +34,7 @@ test("no signal sees the future: cutting the history after a signal doesn't chan
   const bars = walk(1500);
   const ev = signalsFor(stock, bars);
   const e = ev[0];
-  const cut = bars.findIndex((b) => b.time === e.time) + 1 + 40;
+  const cut = bars.findIndex((b) => b.time === e.time) + 1 + 60;
   const again = signalsFor(stock, bars.slice(0, cut + 1)).find((x) => x.time === e.time);
   assert.deepEqual({ ...again, ret10: 0 }, { ...e, ret10: 0 });
 });
@@ -71,4 +71,13 @@ test("exits: a trailing stop locks in a run, a 2R target is twice the risk, and 
   assert.equal(tr.r, 1.4);
   const gap = [b(99, 100, 98, 99), b(90, 91, 88, 89)];
   assert.equal(simulate(gap, 0, 100, 95, 2, 104, EXITS.t1).r, -2, "filled at 90, not 95");
+});
+
+test("the market filter reads the index on the signal's own day", () => {
+  const bars = walk(1500);
+  // an index that is "up" (above its EMA 50) only in the first half
+  const index = bars.map((b, k) => ({ ...b, close: k < 750 ? 100 + k : 100 + 750 - (k - 750) * 3 }));
+  const ev = signalsFor(stock, bars, { index });
+  const mid = bars[800].time;
+  assert.ok(ev.filter((e) => e.time > mid + 30 * 86400).every((e) => e.marketUp === false));
 });

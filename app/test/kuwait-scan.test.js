@@ -107,3 +107,13 @@ test("US stocks: values in dollars, and today's volume measured against New York
   assert.ok(us.value > 4e7 && us.value < 6e7, `${us.value} dollars a day`);
   assert.ok(scanRow(stock, bars, 0).value < 1e5, "the same bars read as fils are dinars");
 });
+
+test("US entry: the base signal plus a breakout on 2x volume; no week/RSI/close conditions; a 3 ATR trail", () => {
+  const base = { breakout: { dir: "up", confirmed: true, vol: 2.4 }, flow: { inflowPct: 60 }, buyToday: 70, signalKey: 1, weekly: -1, rsi: 75, closePos: 0.3 };
+  assert.ok(isEntry({ ...base, market: "us" }), "Kuwait's extra conditions don't apply");
+  assert.ok(!isEntry({ ...base, market: "us", breakout: { dir: "up", confirmed: true, vol: 1.6 } }), "1.6x isn't enough in the US");
+  assert.ok(!isEntry({ ...base, market: "kw" }), "but in Kuwait they do");
+  const bars = range(200, { start: 50, amp: 2, vol: 1e6 });
+  assert.equal(scanRow({ code: "TST", symbol: "US:TST", en: "Test", ar: null }, bars, 0, { market: "us" }).trail.atr, 3);
+  assert.equal(scanRow(stock, bars, 0).trail.atr, 2.5);
+});

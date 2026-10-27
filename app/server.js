@@ -446,7 +446,7 @@ async function handle(req, res) {
     }
     // ---------- the Kuwait entry signal tested on the market's history ----------
     if (p === "/api/kwbacktest") {
-      if (req.method === "GET") return send(res, 200, kwbacktest.status());
+      if (req.method === "GET") return send(res, 200, kwbacktest.status(q.market === "us" ? "us" : "kw"));
       if (req.method === "POST") return send(res, 200, kwbacktest.start(await readBody(req, 1e3)));
     }
     // ---------- the Kuwait market watch: settings, and a scan now ----------

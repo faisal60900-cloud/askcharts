@@ -3,7 +3,7 @@
 // opens the chart, where the Market Reader draws its levels and plan.
 import { api } from "./api.js";
 import { KUWAIT_STOCKS } from "../lib/kuwait-market.js";
-import { scanRow, FILTERS, ENTRY_RULES } from "../lib/kuwait-scan.js";
+import { scanRow, FILTERS, entryRules } from "../lib/kuwait-scan.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const num = (v, d = 1) => (v == null || !Number.isFinite(v) ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: d }));
@@ -154,7 +154,7 @@ export function renderKwScan(box, app, market = "kw") {
         })
         .join("")}</tbody></table>
       <div class="pad hint-text">${st.rows.some((r) => r.early) ? `<b class="kw-gold">الجلسة بدأت للتو لـ ${st.rows.filter((r) => r.early).length} سهم، فقُرئت على آخر جلسة مكتملة.</b><br>` : ""}${rows.length} سهم مطابق من ${st.rows.filter((r) => !r.error).length} · <b class="up">${entries} إشارة دخول</b> · ${st.rows.filter((r) => r.error).length} بلا بيانات · آخر مسح ${st.at ? new Date(st.at).toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit" }) : "—"}. اضغط على أي سهم لفتح شارته مع خطة المستويات.<br>
-      <b>إشارة دخول</b> = اختراق مؤكد بسيولة + سيولة داخلة 55% فأكثر + الشراء أكبر من البيع + ميزان إشارات إيجابي + <b>الاتجاه الأسبوعي صاعد + RSI بين 50 و70 + إغلاق قرب قمة اليوم</b>. الخروج المختبر تاريخيًا${kw ? "" : " (على السوق الكويتي)"}: <b>وقف متحرك</b> = أعلى سعر بعد الدخول ناقص 2.5 ATR (العمود «وقف متحرك»)، والمقاومة القريبة للمعلومة فقط. صفقات الشراء والبيع تقدير. هذه نتائج فلترة فنية وليست توصية، والقرار وحجم المخاطرة عليك.</div>`;
+      <b>إشارة دخول</b> = اختراق مؤكد بسيولة + سيولة داخلة 55% فأكثر + الشراء أكبر من البيع + ميزان إشارات إيجابي + <b>${kw ? "الاتجاه الأسبوعي صاعد + RSI بين 50 و70 + إغلاق قرب قمة اليوم" : "سيولة الاختراق 2x فأكثر"}</b>. الخروج المختبر تاريخيًا: <b>وقف متحرك</b> = أعلى سعر بعد الدخول ناقص ${kw ? "2.5" : "3"} ATR (العمود «وقف متحرك»)، والمقاومة القريبة للمعلومة فقط. صفقات الشراء والبيع تقدير. هذه نتائج فلترة فنية وليست توصية، والقرار وحجم المخاطرة عليك.</div>`;
     t.querySelectorAll("th[data-k]").forEach((th) => {
       th.onclick = () => {
         const k = th.dataset.k;
@@ -172,9 +172,10 @@ export function renderKwScan(box, app, market = "kw") {
     <label class="field">بحث<input id="kwQ" value="${esc(st.q)}" style="width:110px" placeholder="رمز أو اسم"></label>
     ${kw ? "" : `<label class="field">عدد الأسهم<select id="kwSize">${[100, 300, 500, 1000].map((n) => `<option value="${n}" ${n === st.size ? "selected" : ""}>أنشط ${n}</option>`).join("")}</select></label>`}
     <label class="field">أقل قيمة تداول يومية (${M.cur})<input id="kwMin" type="number" min="0" step="${kw ? 1000 : 1000000}" value="${st.minValue}" style="width:120px"></label>
-    <button class="btn ${st.entryOnly ? "primary" : ""}" id="kwEntry" title="${ENTRY_RULES.map((k) => FILTERS[k].ar).join(" + ")}">${st.entryOnly ? "✓ " : ""}إشارات دخول شراء فقط</button>
+    <button class="btn ${st.entryOnly ? "primary" : ""}" id="kwEntry" title="${entryRules(market).map((k) => FILTERS[k].ar).join(" + ")}">${st.entryOnly ? "✓ " : ""}إشارات دخول شراء فقط</button>
   </div>
-  ${kw ? '<div class="kw-watch" id="kwWatch"></div>\n  <div class="kw-watch" id="kwTrack"></div>' : '<div class="kw-watch hint-text">⚠️ نفس شروط الكويت، لكنها <b>انختبرت على تاريخ السوق الكويتي فقط</b>، ونتائجها في السوق الأمريكي ما انقاست للحين. الأسعار بالدولار، والسيولة مقارنة بالجزء اللي مضى من جلسة نيويورك (4:30 العصر إلى 11 الليل بتوقيت الكويت).</div>'}
+  ${kw ? '<div class="kw-watch" id="kwWatch"></div>' : '<div class="kw-watch hint-text">🇺🇸 شروط خاصة بالسوق الأمريكي من اختبار تاريخه: اختراق بسيولة <b>2x فأكثر</b> ووقف متحرك أوسع (3 ATR). الأسعار بالدولار، والسيولة مقارنة بالجزء اللي مضى من جلسة نيويورك (4:30 العصر إلى 11 الليل بتوقيت الكويت).</div>'}
+  <div class="kw-watch" id="kwTrack"></div>
   <div class="row-flex kw-chips">${Object.entries(FILTERS)
     .map(([k, f]) => `<label class="kw-chip ${st.on.has(k) ? "on" : ""}"><input type="checkbox" data-fl="${k}" ${st.on.has(k) ? "checked" : ""} ${st.entryOnly ? "disabled" : ""}>${esc(f.ar)}</label>`)
     .join("")}</div></div>
@@ -234,10 +235,8 @@ export function renderKwScan(box, app, market = "kw") {
     });
   prog();
   table();
-  if (kw) {
-    watchBox();
-    trackBox();
-  }
+  if (kw) watchBox();
+  trackBox();
 
   // 📊 the signal's record in the market's history (lib/kwbacktest.js), and a button to test again
   async function trackBox(poll = false) {
@@ -245,7 +244,7 @@ export function renderKwScan(box, app, market = "kw") {
     if (!el) return;
     let b;
     try {
-      b = await api.get("/api/kwbacktest");
+      b = await api.get(`/api/kwbacktest?market=${market}`);
     } catch {
       el.hidden = true;
       return;
@@ -258,16 +257,16 @@ export function renderKwScan(box, app, market = "kw") {
       : L?.all?.n
         ? `<div class="row-flex"><b>📊 سجل إشارة الدخول تاريخيًا</b><span class="hint-text">${b.stocks} سهم منذ ${esc(b.from)} · بعد عمولة تقديرية 0.3%</span><button class="btn" id="kwBtRun">أعد الاختبار</button></div>
           <table class="t kw-t kw-bt"><thead><tr><th>الفترة</th><th>إشارات</th><th>متوسط الصفقة</th><th>رابحة</th><th>معامل الربح</th><th>أيام</th></tr></thead><tbody>
-          ${row("كل الفترة", L.all)}${row("2021–2024 (اختيرت عليها الشروط)", L.train)}${row("2025–2026 (للتأكد)", L.check)}
+          ${row("كل الفترة", L.all)}${row("حتى 2024 (اختيرت عليها الشروط)", L.train)}${row("2025–2026 (للتأكد)", L.check)}
           ${Object.entries(L.byYear || {}).map(([y, x]) => row(`سنة ${y}`, x)).join("")}
           ${row("للمقارنة: الشروط القديمة + البيع عند الهدف الأول", b.grid?.["base|t1"] && { ...b.grid["base|t1"].train, n: b.grid["base|t1"].train.n + b.grid["base|t1"].check.n, avgRet: Math.round(((b.grid["base|t1"].train.avgRet * b.grid["base|t1"].train.n + b.grid["base|t1"].check.avgRet * b.grid["base|t1"].check.n) / (b.grid["base|t1"].train.n + b.grid["base|t1"].check.n)) * 100) / 100, profitable: null, profitFactor: null, avgDays: b.grid["base|t1"].train.avgDays })}
           </tbody></table>
-          <div class="hint-text">الدخول بسعر افتتاح الجلسة التالية، والخروج بالوقف المتحرك (أو بعد 40 جلسة). النتائج الماضية لا تضمن المستقبل، وسنة 2026 كانت أضعف.</div>`
-        : `<div class="row-flex"><span class="hint-text">📊 ما انختبرت الإشارة على تاريخ السوق بعد.</span><button class="btn" id="kwBtRun">اختبرها على آخر 6 سنوات</button></div>`;
+          <div class="hint-text">الدخول بسعر افتتاح الجلسة التالية، والخروج بالوقف المتحرك. النتائج الماضية لا تضمن المستقبل.${kw ? " سنة 2026 كانت أضعف." : " القائمة الأمريكية هي أنشط الأسهم اليوم، فالنتائج قد تكون أفضل من الواقع (أسهم نجحت فبقيت نشطة)."}</div>`
+        : `<div class="row-flex"><span class="hint-text">📊 ما انختبرت الإشارة على تاريخ ${M.title} بعد.</span><button class="btn" id="kwBtRun">اختبرها على آخر 5 سنوات</button></div>`;
     const run = el.querySelector("#kwBtRun");
     if (run)
       run.onclick = async () => {
-        await api.post("/api/kwbacktest", { limit: 1500 });
+        await api.post("/api/kwbacktest", { market, limit: 1500, size: 300 });
         trackBox(true);
       };
     if (b.running || poll) setTimeout(() => box.querySelector("#kwTrack") && (b.running || poll) && trackBox(b.running), 3000);
