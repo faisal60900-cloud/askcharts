@@ -250,7 +250,20 @@ export function usSessionFraction(barTime, now = Date.now()) {
   // daily bars are stamped at midnight or the open, UTC: their UTC date is the session's date
   if (new Date(barTime * 1000).toISOString().slice(0, 10) !== today) return 1;
   const min = Number(parts.hour) * 60 + Number(parts.minute);
-  return Math.min(1, Math.max(0.05, (min - (9 * 60 + 30)) / 390));
+  return usVolumeShare(min - (9 * 60 + 30));
+}
+// The share of a US day's volume traded by a minute of the session: the opening auction and first
+// half hour are heavy, midday light, the last half hour and closing auction heavy again (a typical
+// U-shaped day). Linear between these points.
+const US_CURVE = [[0, 0.03], [30, 0.15], [90, 0.3], [150, 0.42], [210, 0.52], [270, 0.62], [330, 0.75], [360, 0.83], [390, 1]];
+export function usVolumeShare(m) {
+  if (m <= 0) return US_CURVE[0][1];
+  for (let k = 1; k < US_CURVE.length; k++) {
+    const [m1, v1] = US_CURVE[k],
+      [m0, v0] = US_CURVE[k - 1];
+    if (m <= m1) return v0 + ((v1 - v0) * (m - m0)) / (m1 - m0);
+  }
+  return 1;
 }
 
 export function readMarket(byTf, { main = "1D", symbol = "", sessionFraction = 1 } = {}) {

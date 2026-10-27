@@ -3,7 +3,7 @@
 // stop and targets, an Arabic analyst note from the person's own AI, and the signal's record. It
 // also sends Arabic news for the stocks it signalled, and three briefs a day: before the open, after
 // the open and after the close. Runs on the server, with the browser closed.
-import { getCandles, nasdaqScreener, usMarket } from "./providers.js";
+import { getCandles, nasdaqScreener, usMarket, nasdaqLiveQuotes } from "./providers.js";
 import * as store from "./store.js";
 import * as alerts from "./alerts.js";
 import * as kwwatch from "./kwwatch.js";
@@ -32,7 +32,11 @@ export function due(m, flags = {}) {
   if (!m.weekday) return {};
   return {
     pre: m.min >= 9 * 60 && m.min < 9 * 60 + 30 && !flags.pre,
-    open: m.min >= 9 * 60 + 45 && m.min < 11 * 60 && !flags.open,
+    // the pre-market radar, before the opening auction (the opening cross is at 9:30)
+    radar: m.min >= 9 * 60 + 15 && m.min < 9 * 60 + 30 && !flags.radar,
+    // the first half hour: scan every 5 minutes, breakouts come early
+    fast: m.min >= 9 * 60 + 30 && m.min < 10 * 60,
+    open: m.min >= 9 * 60 + 40 && m.min < 11 * 60 && !flags.open,
     close: m.min >= 16 * 60 + 2 && m.min < 17 * 60 + 30 && !flags.close,
     news: m.min >= 7 * 60 && m.min < 18 * 60,
   };
@@ -180,12 +184,18 @@ export async function runOnce({ force = false } = {}) {
         2500,
       );
       await send(entryMessage(r, { market, note }), { symbol: r.symbol, name: "" });
-      state.watched[r.code] = { symbol: r.symbol, en: r.en, since: Date.now() };
+      state.watched[r.code] = { symbol: r.symbol, en: r.en, since: Date.now(), close: r.price, level: r.breakout?.level ?? null, stop: r.plan?.stop ?? null };
     }
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 5 * 86400e3) delete state.sent[k];
     state.lastRun = new Date().toISOString();
     state.lastScanAt = Date.now();
     state.lastEntries = entries.map((r) => r.code);
+    // the stocks to look at before tomorrow's open: near a breakout or just through one
+    state.radar = ok
+      .filter((r) => (r.value ?? 0) >= cfg.minValue && (r.breakout?.dir === "up" || r.breakout?.dir === "near"))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 25)
+      .map((r) => ({ code: r.code, en: r.en, close: r.price, level: r.breakout.level, dir: r.breakout.dir, stop: r.plan?.stop ?? null }));
     state.near = ok
       .filter((r) => !r.entry && (r.value ?? 0) >= cfg.minValue)
       .sort((a, b) => b.score - a.score)
@@ -233,6 +243,37 @@ export async function brief(kind = "pre") {
   return { ok: true, ai: !!note };
 }
 
+// ---------- before the opening auction ----------
+// Pre-market prices (Nasdaq's last pre-market trade and its change from yesterday's close) for the
+// stocks near or through a breakout at the last scan, and for the ones signalled in the last days.
+// Pre-market volume is thin and the auction's order imbalance isn't in the free feeds, so this says
+// where to look at the open, not what the open will do.
+export function radarLines(list, quotes, watched = {}) {
+  const lines = [];
+  for (const r of list) {
+    const q = quotes[r.code];
+    if (!q?.price) continue;
+    const gap = Number.isFinite(q.changePct) ? q.changePct : ((q.price - r.close) / r.close) * 100;
+    const above = r.level && q.price > r.level;
+    if (watched[r.code] && r.stop && q.price <= r.stop) lines.push({ k: 0, t: `🛑 ${r.code}: ${usd(q.price)} (${pct(gap)}) تحت وقف إشارته ${usd(r.stop)} قبل الافتتاح` });
+    else if (r.dir === "near" && above) lines.push({ k: 1, t: `🚀 ${r.code}: ${usd(q.price)} (${pct(gap)}) فوق مستوى الاختراق ${usd(r.level)} قبل الافتتاح: راقب هل يثبت فوقه بعد المزاد وبسيولة` });
+    else if (Math.abs(gap) >= 2) lines.push({ k: 2, t: `${gap > 0 ? "⬆️" : "⬇️"} ${r.code}: فجوة ${pct(gap)} قبل الافتتاح (${usd(q.price)})${r.level ? `، مستوى الاختراق ${usd(r.level)}` : ""}` });
+  }
+  return lines.sort((a, b) => a.k - b.k).map((l) => l.t);
+}
+export async function radar() {
+  const watchedRows = Object.entries(state.watched).map(([code, w]) => ({ code, en: w.en, close: w.close ?? null, level: w.level ?? null, stop: w.stop ?? null, dir: "up" }));
+  const list = [...watchedRows, ...(state.radar || []).filter((r) => !state.watched[r.code])];
+  if (!list.length) return { sent: 0 };
+  const quotes = await nasdaqLiveQuotes(list.map((r) => r.code), "stocks").catch(() => ({}));
+  for (const r of list) if (r.close == null && quotes[r.code]?.price && Number.isFinite(quotes[r.code].changePct)) r.close = quotes[r.code].price / (1 + quotes[r.code].changePct / 100);
+  const lines = radarLines(list, quotes, state.watched);
+  if (!lines.length) return { sent: 0 };
+  const note = await ai(`هذي تحركات التداول المبكر (قبل مزاد الافتتاح) لأسهم قريبة من الاختراق أو طلعت فيها إشارات. اكتب 3 إلى 5 أسطر: أهم سهمين يستحقون المراقبة في الافتتاح وليش، وتنبيه أن سيولة ما قبل الافتتاح ضعيفة وأن الحكم الحقيقي بعد أول 5 إلى 15 دقيقة.\n\n${lines.join("\n")}`, 2000);
+  await send(["📡 قبل مزاد الافتتاح الأمريكي", lines.join("\n"), note ? `🧠 ${note}` : "", "أسعار التداول المبكر بسيولة قليلة، والحكم الحقيقي بعد الافتتاح. للمعلومة، وليست توصية."].filter(Boolean).join("\n\n"), { name: "" });
+  return { sent: lines.length };
+}
+
 // ---------- news ----------
 export async function newsCheck() {
   const since = Date.now() - 5 * 86400e3;
@@ -269,16 +310,29 @@ export async function aiTest() {
 }
 
 // ---------- the clock ----------
+// A brief or radar sent by hand (a button) before its time doesn't count as today's: only one sent
+// at or after its window opened does.
+const STARTS = { pre: 9 * 60, radar: 9 * 60 + 15, open: 9 * 60 + 40, close: 16 * 60 + 2 };
+export function scheduledFlags(date, briefs = state.briefs) {
+  const out = {};
+  for (const [k, at] of Object.entries(briefs[date] || {})) if (STARTS[k] != null && ny(new Date(at)).date === date && ny(new Date(at)).min >= STARTS[k]) out[k] = at;
+  return out;
+}
 async function tick() {
   if (!cfg.on) return;
   const m = ny();
-  const flags = state.briefs[m.date] || {};
-  const d = due(m, flags);
+  const d = due(m, scheduledFlags(m.date));
   try {
     const mk = m.weekday ? await usMarket().catch(() => ({ open: false, businessDay: true })) : { open: false, businessDay: false };
     if (!mk.businessDay) return;
     if (cfg.briefs && d.pre) await brief("pre");
-    if (mk.open && Date.now() - state.lastScanAt >= cfg.every * 60e3) await runOnce();
+    if (d.radar) {
+      // marked first, so a failing feed doesn't retry it every minute
+      (state.briefs[m.date] ||= {}).radar = Date.now();
+      saveState();
+      await radar();
+    }
+    if (mk.open && Date.now() - state.lastScanAt >= (d.fast ? 5 : cfg.every) * 60e3) await runOnce();
     if (cfg.briefs && d.open && state.lastScanAt > Date.now() - 20 * 60e3) await brief("open");
     if (cfg.briefs && d.close) {
       await runOnce();

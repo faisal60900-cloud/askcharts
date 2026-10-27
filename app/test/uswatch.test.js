@@ -53,3 +53,42 @@ test("a price that ran past the entry zone is flagged, and one inside it is said
   assert.match(U.entryMessage({ ...base, price: 635.2 }), /فوق منطقة الدخول بـ 6%.*وتجاوز الهدف 2/);
   assert.match(U.entryMessage({ ...base, price: 595 }), /داخل منطقة الدخول/);
 });
+
+import { usVolumeShare } from "../public/lib/market-reader.js";
+
+test("US volume is U-shaped: heavy at the open and close, light at midday", () => {
+  assert.ok(usVolumeShare(1) < 0.04, "the opening auction is a few percent");
+  assert.ok(Math.abs(usVolumeShare(30) - 0.15) < 1e-9, "15% by 10:00");
+  assert.equal(usVolumeShare(390), 1);
+  assert.ok(usVolumeShare(210) - usVolumeShare(150) < usVolumeShare(30) - usVolumeShare(0), "an hour at midday trades less than the first half hour");
+});
+
+test("the radar and the fast scans come before and right after the open", () => {
+  const at = (h, m) => ({ date: "2026-10-27", day: 2, min: h * 60 + m, weekday: true });
+  assert.equal(U.due(at(9, 20)).radar, true);
+  assert.equal(U.due(at(9, 20), { radar: 1 }).radar, false);
+  assert.equal(U.due(at(9, 31)).fast, true);
+  assert.equal(U.due(at(10, 5)).fast, false);
+});
+
+test("the radar flags a stock above its breakout level, a gap, and a signalled stock below its stop", () => {
+  const list = [
+    { code: "AAA", close: 100, level: 102, dir: "near", stop: 95 },
+    { code: "BBB", close: 50, level: 55, dir: "near", stop: 45 },
+    { code: "CCC", close: 80, level: 78, dir: "up", stop: 76 },
+    { code: "DDD", close: 30, level: 31, dir: "near", stop: 28 },
+  ];
+  const quotes = { AAA: { price: 103, changePct: 3 }, BBB: { price: 52, changePct: 4 }, CCC: { price: 75, changePct: -6.3 }, DDD: { price: 30.1, changePct: 0.3 } };
+  const lines = U.radarLines(list, quotes, { CCC: {} });
+  assert.equal(lines.length, 3, lines.join("\n"));
+  assert.match(lines[0], /CCC.*تحت وقف/, "the stop warning comes first");
+  assert.match(lines[1], /AAA.*فوق مستوى الاختراق/);
+  assert.match(lines[2], /BBB.*فجوة/);
+});
+
+test("a brief sent by hand before its time doesn't stop the scheduled one", () => {
+  const early = Date.parse("2026-10-27T08:05:00Z"), // 4:05 New York
+    onTime = Date.parse("2026-10-27T13:01:00Z"); // 9:01
+  assert.deepEqual(U.scheduledFlags("2026-10-27", { "2026-10-27": { pre: early, radar: early } }), {});
+  assert.deepEqual(Object.keys(U.scheduledFlags("2026-10-27", { "2026-10-27": { pre: onTime } })), ["pre"]);
+});

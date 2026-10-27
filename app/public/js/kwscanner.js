@@ -262,10 +262,11 @@ export function renderKwScan(box, app, market = "kw") {
     <div class="row-flex" style="margin-top:6px">
       <button class="btn" data-usnow="run">افحص الآن وأرسل</button>
       <button class="btn" data-usnow="pre">أرسل تقرير السوق الآن</button>
+      <button class="btn" data-usnow="radar">رادار ما قبل الافتتاح الآن</button>
       <button class="btn" data-usnow="close">أرسل ملخص الإغلاق الآن</button>
     </div>
     <div class="hint-text">${w.telegram ? "📱 يرسل على تيليجرام" : '<span class="down">تيليجرام مو مربوط: اربطه من تبويب ماسح الكويت ← 📱 للجوال</span>'} · الوقت في نيويورك ${nyClock} · آخر مسح ${when}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}<br>
-    التقارير: قبل الافتتاح 9:00 نيويورك، بعد الافتتاح 9:45، بعد الإغلاق 16:05 (بتوقيت الكويت ${w.ny.date >= "2026-11-01" && w.ny.date < "2027-03-14" ? "5:00 العصر و5:45 و12:05 بعد نص الليل" : "4:00 العصر و4:45 و11:05 الليل"}). تحليل Claude يستخدم مفتاحك ويصرف من رصيده (قليل).${w.near?.length ? `<br>أقرب الأسهم للإشارة: ${w.near.map((r) => `<b>${esc(r.code)}</b> (ينقصه ${esc(r.why)})`).join(" · ")}` : ""}</div>`;
+    التقارير بتوقيت الكويت: ${w.ny.date >= "2026-11-01" && w.ny.date < "2027-03-14" ? "قبل الافتتاح 5:00 العصر · رادار قبل المزاد 5:15 · مسح كل 5 دقايق من الافتتاح 5:30 لين 6:00 · بعد الافتتاح 5:40 · الإغلاق 12:05 بعد نص الليل" : "قبل الافتتاح 4:00 العصر · رادار قبل المزاد 4:15 · مسح كل 5 دقايق من الافتتاح 4:30 لين 5:00 · بعد الافتتاح 4:40 · الإغلاق 11:05 الليل"}. تحليل Claude يستخدم مفتاحك ويصرف من رصيده (قليل).${w.near?.length ? `<br>أقرب الأسهم للإشارة: ${w.near.map((r) => `<b>${esc(r.code)}</b> (ينقصه ${esc(r.why)})`).join(" · ")}` : ""}</div>`;
     const post = async (patch) => {
       try {
         await api.post("/api/uswatch", patch);
@@ -285,8 +286,8 @@ export function renderKwScan(box, app, market = "kw") {
           b.disabled = true;
           b.textContent = "جاري…";
           try {
-            const r = k === "run" ? await api.post("/api/uswatch/run") : await api.post(`/api/uswatch/brief?kind=${k}`);
-            app.toast?.(k === "run" ? (r.busy ? "فيه مسح شغال الحين." : r.sent ? `أُرسلت ${r.sent} إشارة دخول.` : `مسح ${r.scanned} سهم: لا توجد إشارة دخول جديدة.`) : `أُرسل التقرير${r.ai ? " مع تحليل Claude" : ""} ✓`);
+            const r = k === "run" ? await api.post("/api/uswatch/run") : k === "radar" ? await api.post("/api/uswatch/radar") : await api.post(`/api/uswatch/brief?kind=${k}`);
+            app.toast?.(k === "run" ? (r.busy ? "فيه مسح شغال الحين." : r.sent ? `أُرسلت ${r.sent} إشارة دخول.` : `مسح ${r.scanned} سهم: لا توجد إشارة دخول جديدة.`) : k === "radar" ? (r.sent ? `أُرسل الرادار: ${r.sent} سهم يستحق المراقبة ✓` : "الرادار: ما فيه تحرك لافت قبل الافتتاح (أو السوق مو في وقت التداول المبكر).") : `أُرسل التقرير${r.ai ? " مع تحليل Claude" : ""} ✓`);
           } catch (e) {
             app.toast?.(e.message);
           }

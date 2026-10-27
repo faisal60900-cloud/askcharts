@@ -100,7 +100,7 @@ import { usSessionFraction } from "../public/lib/market-reader.js";
 test("US stocks: values in dollars, and today's volume measured against New York's session", () => {
   const now = Date.UTC(2026, 9, 27, 15, 30); // 11:30 in New York
   const f = usSessionFraction(Date.UTC(2026, 9, 27) / 1000, now);
-  assert.ok(f > 0.28 && f < 0.34, `${f}`);
+  assert.ok(f > 0.33 && f < 0.39, `${f} (U-shaped: 36% of the day by 11:30)`);
   assert.equal(usSessionFraction(Date.UTC(2026, 9, 26) / 1000, now), 1);
   const bars = range(200, { start: 50, amp: 2, vol: 1e6 });
   const us = scanRow({ code: "TST", symbol: "US:TST", en: "Test", ar: null }, bars, 0, { market: "us" });

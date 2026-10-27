@@ -948,7 +948,7 @@ export async function nasdaqScreener(kind = "stocks") {
 }
 
 // Live quotes for US symbols, 20 per request.
-async function nasdaqLiveQuotes(tickers, defaultClass) {
+export async function nasdaqLiveQuotes(tickers, defaultClass) {
   const etfs = defaultClass
     ? new Set()
     : new Set(

@@ -455,6 +455,7 @@ async function handle(req, res) {
     if (p === "/api/uswatch/news" && req.method === "POST") return send(res, 200, await uswatch.newsCheck());
     if (p === "/api/uswatch/ai-test" && req.method === "POST") return send(res, 200, await uswatch.aiTest());
     if (p === "/api/uswatch/preview") return send(res, 200, await uswatch.preview(q.code));
+    if (p === "/api/uswatch/radar" && req.method === "POST") return send(res, 200, await uswatch.radar());
     // ---------- the Kuwait entry signal tested on the market's history ----------
     if (p === "/api/kwbacktest") {
       if (req.method === "GET") return send(res, 200, kwbacktest.status(q.market === "us" ? "us" : "kw"));
