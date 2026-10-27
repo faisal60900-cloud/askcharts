@@ -436,12 +436,21 @@ async function handle(req, res) {
       if (req.method === "POST")
         return send(res, 200, alerts.add(await readBody(req)));
     }
+    // Restart the app after an update to its files: AskCharts' runner starts it again two seconds
+    // after it exits (as after a crash), so no computer restart is needed.
+    if (p === "/api/restart" && req.method === "POST") {
+      send(res, 200, { ok: true, note: "restarting" });
+      setTimeout(() => process.exit(3), 300);
+      return;
+    }
     // ---------- the Kuwait market watch: settings, and a scan now ----------
     if (p === "/api/kwwatch") {
       if (req.method === "GET") return send(res, 200, kwwatch.settings());
       if (req.method === "POST") return send(res, 200, kwwatch.update(await readBody(req, 1e4)));
     }
     if (p === "/api/kwwatch/run" && req.method === "POST") return send(res, 200, await kwwatch.runOnce());
+    if (p === "/api/kwwatch/whatsapp-test" && req.method === "POST")
+      return send(res, 200, await kwwatch.sendWhatsApp("✅ AskCharts: رسالة تجريبية. تنبيهات إشارات الدخول من ماسح السوق الكويتي راح توصلك هنا."));
     if (p === "/api/alerts/log") return send(res, 200, alerts.history());
     if (p === "/api/alerts/check" && req.method === "POST") {
       await alerts.evaluate();

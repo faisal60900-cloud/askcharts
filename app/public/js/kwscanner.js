@@ -227,10 +227,17 @@ export function renderKwScan(box, app) {
       <label class="field">كل<select id="kwWEvery">${[5, 10, 15, 30].map((m) => `<option value="${m}" ${m === w.every ? "selected" : ""}>${m} دقيقة</option>`).join("")}</select></label>
       <label class="kw-chip ${w.afterClose ? "on" : ""}"><input type="checkbox" id="kwWClose" ${w.afterClose ? "checked" : ""}>مسح بعد الإغلاق</label>
       <button class="btn" id="kwWNow">افحص الآن وأرسل</button>
-      <button class="btn" id="kwWPhone">📱 للجوال</button>
+      <button class="btn ${w.whatsapp ? "primary" : ""}" id="kwWPhone">${w.whatsapp ? "✓ " : ""}📱 واتساب</button>
     </div>
-    <div class="hint-text">${w.on ? `يمسح السوق كل ${w.every} دقيقة من الأحد للخميس 9:00–12:45${w.afterClose ? " ومرة بعد الإغلاق" : ""}، ويرسل تنبيه لكل إشارة دخول جديدة (مرة وحدة لكل سهم في اليوم).` : "شغّله ليمسح السوق خلال الجلسة ويرسل لك تنبيه بأي إشارة دخول جديدة، حتى لو المتصفح مقفل."} السوق الحين ${w.sessionOpen ? '<b class="up">مفتوح</b>' : "مغلق"} · آخر مسح ${when}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}${w.webhook ? " · 📱 الإرسال للجوال مفعّل" : ""}</div>
-    <div id="kwWPhoneBox" hidden class="kw-phone"><label class="field">رابط الإرسال (Telegram أو Discord أو Slack)<input id="kwWHook" value="${esc(w.webhook || "")}" placeholder="https://api.telegram.org/bot…/sendMessage?chat_id=…" style="width:340px" dir="ltr"></label><button class="btn" id="kwWHookSave">حفظ</button></div>`;
+    <div class="hint-text">${w.on ? `يمسح السوق كل ${w.every} دقيقة من الأحد للخميس 9:00–12:45${w.afterClose ? " ومرة بعد الإغلاق" : ""}، ويرسل تنبيه لكل إشارة دخول جديدة (مرة وحدة لكل سهم في اليوم).` : "شغّله ليمسح السوق خلال الجلسة ويرسل لك تنبيه بأي إشارة دخول جديدة، حتى لو المتصفح مقفل."} السوق الحين ${w.sessionOpen ? '<b class="up">مفتوح</b>' : "مغلق"} · آخر مسح ${when}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}${w.whatsapp ? ` · 📱 الواتساب مفعّل على ${esc(w.waPhone)}` : ""}${w.lastWhatsApp && !w.lastWhatsApp.ok ? ` · <span class="down">آخر رسالة واتساب ما وصلت: ${esc(w.lastWhatsApp.note)}</span>` : ""}${w.webhook ? " · 🔗 رابط إرسال مفعّل" : ""}</div>
+    <div id="kwWPhoneBox" hidden class="kw-phone-box">
+      <div class="hint-text"><b>تفعيل الواتساب (مرة وحدة):</b> 1) افتح موقع <b>callmebot.com</b> ← WhatsApp، وخذ رقم البوت وأضفه في جهات الاتصال. 2) أرسل له من جوالك: <code dir="ltr">I allow callmebot to send me messages</code> 3) يرد عليك برسالة فيها <b>apikey</b>. 4) اكتب رقمك والمفتاح هنا واضغط حفظ، ثم «رسالة تجريبية».</div>
+      <div class="kw-phone"><label class="field">رقم الواتساب مع رمز الدولة<input id="kwWaPhone" placeholder="+96550000000" style="width:150px" dir="ltr"></label>
+      <label class="field">المفتاح (apikey)<input id="kwWaKey" type="password" autocomplete="off" placeholder="${w.whatsapp ? "محفوظ ••••" : "من رسالة البوت"}" style="width:130px" dir="ltr"></label>
+      <button class="btn primary" id="kwWaSave">حفظ</button><button class="btn" id="kwWaTest" ${w.whatsapp ? "" : "disabled"}>رسالة تجريبية</button>${w.whatsapp ? '<button class="btn" id="kwWaOff">إيقاف الواتساب</button>' : ""}</div>
+      <div class="hint-text">الرسائل تمر عبر خدمة CallMeBot المجانية (طرف ثالث). المفتاح يبقى محفوظ على جهازك فقط ولا يظهر مرة ثانية.</div>
+      <details><summary class="hint-text">متقدم: رابط Telegram أو Discord أو Slack</summary><div class="kw-phone"><label class="field">رابط الإرسال<input id="kwWHook" value="${esc(w.webhook || "")}" placeholder="https://api.telegram.org/bot…/sendMessage?chat_id=…" style="width:320px" dir="ltr"></label><button class="btn" id="kwWHookSave">حفظ</button></div></details>
+    </div>`;
     const post = async (patch) => {
       try {
         await api.post("/api/kwwatch", patch);
@@ -247,6 +254,36 @@ export function renderKwScan(box, app) {
     el.querySelector("#kwWClose").onchange = (e) => post({ afterClose: e.target.checked });
     el.querySelector("#kwWPhone").onclick = () => (el.querySelector("#kwWPhoneBox").hidden = !el.querySelector("#kwWPhoneBox").hidden);
     el.querySelector("#kwWHookSave").onclick = () => post({ webhook: el.querySelector("#kwWHook").value });
+    el.querySelector("#kwWaSave").onclick = async () => {
+      const phone = el.querySelector("#kwWaPhone").value.trim(),
+        key = el.querySelector("#kwWaKey").value.trim();
+      const patch = {};
+      if (phone) patch.waPhone = phone;
+      if (key) patch.waKey = key;
+      if (!Object.keys(patch).length) return app.toast?.("اكتب الرقم والمفتاح أولًا.");
+      try {
+        await api.post("/api/kwwatch", patch);
+        app.toast?.("حُفظ. اضغط «رسالة تجريبية» للتأكد.");
+      } catch (e) {
+        app.toast?.(e.message);
+      }
+      await watchBox();
+      el.querySelector("#kwWPhoneBox").hidden = false;
+    };
+    el.querySelector("#kwWaOff") &&
+      (el.querySelector("#kwWaOff").onclick = () => post({ waPhone: "", waKey: "-" }));
+    el.querySelector("#kwWaTest").onclick = async (e) => {
+      e.target.disabled = true;
+      e.target.textContent = "جاري الإرسال…";
+      try {
+        await api.post("/api/kwwatch/whatsapp-test");
+        app.toast?.("أُرسلت رسالة تجريبية على الواتساب ✓");
+      } catch (err) {
+        app.toast?.(err.message);
+      }
+      await watchBox();
+      el.querySelector("#kwWPhoneBox").hidden = false;
+    };
     el.querySelector("#kwWNow").onclick = async (e) => {
       e.target.disabled = true;
       e.target.textContent = "جاري المسح…";

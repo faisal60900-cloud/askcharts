@@ -51,3 +51,19 @@ test("a watch notification goes into the alert log and reaches listeners", async
   assert.equal(A.history()[0].id, e.id);
   assert.equal(e.text, "إشارة دخول فنية: test");
 });
+
+test("WhatsApp: the number needs its country code, the key is never sent back, and the URL is CallMeBot's", () => {
+  assert.throws(() => W.update({ waPhone: "50000000" }), /رمز الدولة/);
+  const s = W.update({ waPhone: "+965 5000 0123", waKey: "123456" });
+  assert.equal(s.whatsapp, true);
+  assert.equal(s.waKey, undefined, "the key stays on the server");
+  assert.equal(s.waPhone, "+965•••123");
+  assert.equal(W.update({ waKey: "" }).whatsapp, true, "an empty key keeps the saved one");
+  assert.equal(W.update({ waPhone: "", waKey: "-" }).whatsapp, false);
+  const u = new URL(W.whatsappUrl("+96550000123", "abc", "اختراق 352 ✓"));
+  assert.equal(u.host, "api.callmebot.com");
+  assert.equal(u.searchParams.get("phone"), "+96550000123");
+  assert.equal(u.searchParams.get("text"), "اختراق 352 ✓");
+  assert.equal(u.searchParams.get("apikey"), "abc");
+  W.stop();
+});

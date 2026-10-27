@@ -8,7 +8,7 @@ import * as alerts from "./alerts.js";
 import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
 import { scanRow } from "../public/lib/kuwait-scan.js";
 
-const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true };
+const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "" };
 let cfg = { ...DEFAULTS, ...store.read("kwwatch", {}) };
 let state = store.read("kwwatch-state", { sent: {}, lastRun: null, lastEntries: [], lastError: null });
 let timer = null,
@@ -28,7 +28,37 @@ const afterCloseWindow = (d = new Date()) => {
   return k.day >= 0 && k.day <= 4 && k.min > 12 * 60 + 45 && k.min <= 13 * 60 + 30;
 };
 
-export const settings = () => ({ ...cfg, sessionOpen: sessionOpen(), lastRun: state.lastRun, lastEntries: state.lastEntries, lastError: state.lastError });
+// The WhatsApp key is never sent back to the page: only whether one is saved, and the number with
+// its middle hidden.
+const maskPhone = (p) => (p ? p.slice(0, 4) + "•••" + p.slice(-3) : "");
+export const settings = () => {
+  const { waKey, waPhone, ...rest } = cfg;
+  return { ...rest, whatsapp: !!(waKey && waPhone), waPhone: maskPhone(waPhone), sessionOpen: sessionOpen(), lastRun: state.lastRun, lastEntries: state.lastEntries, lastError: state.lastError, lastWhatsApp: state.lastWhatsApp || null };
+};
+
+// WhatsApp through CallMeBot (free, for messages to your own number): a GET with the number, the
+// text and the key the bot gave you.
+export function whatsappUrl(phone, key, text) {
+  return `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent(text)}&apikey=${encodeURIComponent(key)}`;
+}
+export async function sendWhatsApp(text) {
+  if (!cfg.waPhone || !cfg.waKey) throw Object.assign(new Error("أدخل رقم الواتساب والمفتاح أولًا"), { status: 400 });
+  try {
+    const res = await fetch(whatsappUrl(cfg.waPhone, cfg.waKey, text), { signal: AbortSignal.timeout(20000) });
+    const body = (await res.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+    const ok = res.ok && !/error|invalid|not\s+(allowed|registered|active)/i.test(body);
+    state.lastWhatsApp = { at: new Date().toISOString(), ok, note: ok ? "" : body || `HTTP ${res.status}` };
+    store.write("kwwatch-state", state);
+    if (!ok) throw new Error(`الواتساب ما وصل: ${state.lastWhatsApp.note}`);
+    return { ok: true };
+  } catch (e) {
+    if (!state.lastWhatsApp || state.lastWhatsApp.ok) {
+      state.lastWhatsApp = { at: new Date().toISOString(), ok: false, note: e.message };
+      store.write("kwwatch-state", state);
+    }
+    throw Object.assign(e, { status: e.status || 502 });
+  }
+}
 
 export function update(patch = {}) {
   const next = { ...cfg };
@@ -36,6 +66,13 @@ export function update(patch = {}) {
   if ("every" in patch) next.every = Math.min(60, Math.max(5, Number(patch.every) || 15));
   if ("minValue" in patch) next.minValue = Math.max(0, Number(patch.minValue) || 0);
   if ("afterClose" in patch) next.afterClose = !!patch.afterClose;
+  if ("waPhone" in patch) {
+    const ph = String(patch.waPhone || "").replace(/[\s-]/g, "");
+    if (ph && !/^\+\d{8,15}$/.test(ph)) throw Object.assign(new Error("اكتب الرقم مع رمز الدولة، مثل +96550000000"), { status: 400 });
+    next.waPhone = ph;
+  }
+  // an empty key leaves the saved one as it is; "-" removes it
+  if ("waKey" in patch && String(patch.waKey || "").trim()) next.waKey = patch.waKey === "-" ? "" : String(patch.waKey).trim().slice(0, 64);
   if ("webhook" in patch) {
     const w = String(patch.webhook || "").trim();
     if (w && !/^https:\/\/\S+$/i.test(w)) throw Object.assign(new Error("رابط الإرسال لازم يبدأ بـ https://"), { status: 400 });
@@ -90,8 +127,11 @@ export async function runOnce({ force = false } = {}) {
       state.sent[key] = Date.now();
       fresh.push(r);
     }
-    for (const r of fresh)
-      await alerts.notify({ symbol: r.symbol, name: "إشارة دخول فنية", text: message(r), webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
+    for (const r of fresh) {
+      const text = message(r);
+      await alerts.notify({ symbol: r.symbol, name: "إشارة دخول فنية", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
+      if (cfg.waPhone && cfg.waKey) await sendWhatsApp(`🔔 إشارة دخول فنية\n${text}`).catch(() => {});
+    }
     // forget sent keys after four days
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 4 * 86400e3) delete state.sent[k];
     state.lastRun = new Date().toISOString();
