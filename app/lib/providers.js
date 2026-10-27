@@ -875,12 +875,12 @@ export async function usMarket() {
     const open = !!d.isBusinessDay && etNow >= d.openRaw && etNow < d.closeRaw;
     const closedToday = !!d.isBusinessDay && etNow >= d.closeRaw;
     const today = new Date(`${d.openRaw.slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-US", { timeZone: "UTC", month: "short", day: "numeric", year: "numeric" });
-    return { open, status: open ? "Market Open" : d.marketIndicator || "", lastSession: closedToday ? today : d.previousTradeDate || "" };
+    return { open, businessDay: !!d.isBusinessDay, status: open ? "Market Open" : d.marketIndicator || "", lastSession: closedToday ? today : d.previousTradeDate || "" };
   } catch {
     const [date, time] = etNow.split("T");
     const day = new Date(`${date}T12:00:00Z`).getUTCDay();
     const open = day >= 1 && day <= 5 && time >= "09:30:00" && time < "16:00:00";
-    return { open, status: open ? "Market Open" : "", lastSession: "" };
+    return { open, businessDay: day >= 1 && day <= 5, status: open ? "Market Open" : "", lastSession: "" };
   }
 }
 

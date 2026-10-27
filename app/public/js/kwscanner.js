@@ -174,7 +174,7 @@ export function renderKwScan(box, app, market = "kw") {
     <label class="field">أقل قيمة تداول يومية (${M.cur})<input id="kwMin" type="number" min="0" step="${kw ? 1000 : 1000000}" value="${st.minValue}" style="width:120px"></label>
     <button class="btn ${st.entryOnly ? "primary" : ""}" id="kwEntry" title="${entryRules(market).map((k) => FILTERS[k].ar).join(" + ")}">${st.entryOnly ? "✓ " : ""}إشارات دخول شراء فقط</button>
   </div>
-  ${kw ? '<div class="kw-watch" id="kwWatch"></div>' : '<div class="kw-watch hint-text">🇺🇸 شروط خاصة بالسوق الأمريكي من اختبار تاريخه: اختراق بسيولة <b>2x فأكثر</b> ووقف متحرك أوسع (3 ATR). الأسعار بالدولار، والسيولة مقارنة بالجزء اللي مضى من جلسة نيويورك (4:30 العصر إلى 11 الليل بتوقيت الكويت).</div>'}
+  ${kw ? '<div class="kw-watch" id="kwWatch"></div>' : '<div class="kw-watch" id="usWatch"></div><div class="kw-watch hint-text">🇺🇸 شروط خاصة بالسوق الأمريكي من اختبار تاريخه: اختراق بسيولة <b>2x فأكثر</b> ووقف متحرك أوسع (3 ATR). الأسعار بالدولار، والسيولة مقارنة بالجزء اللي مضى من جلسة نيويورك (4:30 العصر إلى 11 الليل بتوقيت الكويت).</div>'}
   <div class="kw-watch" id="kwTrack"></div>
   <div class="row-flex kw-chips">${Object.entries(FILTERS)
     .map(([k, f]) => `<label class="kw-chip ${st.on.has(k) ? "on" : ""}"><input type="checkbox" data-fl="${k}" ${st.on.has(k) ? "checked" : ""} ${st.entryOnly ? "disabled" : ""}>${esc(f.ar)}</label>`)
@@ -236,7 +236,64 @@ export function renderKwScan(box, app, market = "kw") {
   prog();
   table();
   if (kw) watchBox();
+  else usWatchBox();
   trackBox();
+
+  // 🔔 the US watch on the server: signals, Arabic news and three briefs a day to Telegram
+  async function usWatchBox() {
+    const el = box.querySelector("#usWatch");
+    if (!el) return;
+    let w;
+    try {
+      w = await api.get("/api/uswatch");
+    } catch {
+      el.innerHTML = '<span class="hint-text">مراقبة أمريكا تحتاج إعادة تشغيل البرنامج.</span>';
+      return;
+    }
+    const when = w.lastRun ? new Date(w.lastRun).toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit" }) : "—";
+    const chip = (k, label) => `<label class="kw-chip ${w[k] ? "on" : ""}"><input type="checkbox" data-us="${k}" ${w[k] ? "checked" : ""}>${label}</label>`;
+    const nyClock = `${String(Math.floor(w.ny.min / 60)).padStart(2, "0")}:${String(w.ny.min % 60).padStart(2, "0")}`;
+    el.innerHTML = `<div class="row-flex">
+      <button class="btn ${w.on ? "primary" : ""}" id="usOn">${w.on ? "🔔 مراقبة أمريكا شغالة" : "🔕 شغّل مراقبة أمريكا"}</button>
+      <label class="field">مسح كل<select id="usEvery">${[5, 10, 15, 30].map((m) => `<option value="${m}" ${m === w.every ? "selected" : ""}>${m} دقيقة</option>`).join("")}</select></label>
+      <label class="field">عدد الأسهم<select id="usSize">${[100, 300, 500, 1000].map((n) => `<option value="${n}" ${n === w.size ? "selected" : ""}>أنشط ${n}</option>`).join("")}</select></label>
+      ${chip("briefs", "تقارير الافتتاح والإغلاق")}${chip("news", "أخبار بالعربي")}${chip("ai", "تحليل Claude")}
+    </div>
+    <div class="row-flex" style="margin-top:6px">
+      <button class="btn" data-usnow="run">افحص الآن وأرسل</button>
+      <button class="btn" data-usnow="pre">أرسل تقرير السوق الآن</button>
+      <button class="btn" data-usnow="close">أرسل ملخص الإغلاق الآن</button>
+    </div>
+    <div class="hint-text">${w.telegram ? "📱 يرسل على تيليجرام" : '<span class="down">تيليجرام مو مربوط: اربطه من تبويب ماسح الكويت ← 📱 للجوال</span>'} · الوقت في نيويورك ${nyClock} · آخر مسح ${when}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}<br>
+    التقارير: قبل الافتتاح 9:00 نيويورك، بعد الافتتاح 9:45، بعد الإغلاق 16:05 (بتوقيت الكويت ${w.ny.date >= "2026-11-01" && w.ny.date < "2027-03-14" ? "5:00 العصر و5:45 و12:05 بعد نص الليل" : "4:00 العصر و4:45 و11:05 الليل"}). تحليل Claude يستخدم مفتاحك ويصرف من رصيده (قليل).${w.near?.length ? `<br>أقرب الأسهم للإشارة: ${w.near.map((r) => `<b>${esc(r.code)}</b> (ينقصه ${esc(r.why)})`).join(" · ")}` : ""}</div>`;
+    const post = async (patch) => {
+      try {
+        await api.post("/api/uswatch", patch);
+      } catch (e) {
+        app.toast?.(e.message);
+      }
+      usWatchBox();
+    };
+    el.querySelector("#usOn").onclick = () => post({ on: !w.on });
+    el.querySelector("#usEvery").onchange = (e) => post({ every: Number(e.target.value) });
+    el.querySelector("#usSize").onchange = (e) => post({ size: Number(e.target.value) });
+    el.querySelectorAll("[data-us]").forEach((cb) => (cb.onchange = () => post({ [cb.dataset.us]: cb.checked })));
+    el.querySelectorAll("[data-usnow]").forEach(
+      (b) =>
+        (b.onclick = async () => {
+          const k = b.dataset.usnow;
+          b.disabled = true;
+          b.textContent = "جاري…";
+          try {
+            const r = k === "run" ? await api.post("/api/uswatch/run") : await api.post(`/api/uswatch/brief?kind=${k}`);
+            app.toast?.(k === "run" ? (r.busy ? "فيه مسح شغال الحين." : r.sent ? `أُرسلت ${r.sent} إشارة دخول.` : `مسح ${r.scanned} سهم: لا توجد إشارة دخول جديدة.`) : `أُرسل التقرير${r.ai ? " مع تحليل Claude" : ""} ✓`);
+          } catch (e) {
+            app.toast?.(e.message);
+          }
+          usWatchBox();
+        }),
+    );
+  }
 
   // 📊 the signal's record in the market's history (lib/kwbacktest.js), and a button to test again
   async function trackBox(poll = false) {

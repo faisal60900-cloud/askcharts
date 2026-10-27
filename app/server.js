@@ -16,6 +16,7 @@ import * as imports from "./lib/imports.js";
 import * as alerts from "./lib/alerts.js";
 import * as kwwatch from "./lib/kwwatch.js";
 import * as kwbacktest from "./lib/kwbacktest.js";
+import * as uswatch from "./lib/uswatch.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
 import * as copilot from "./lib/copilot.js";
@@ -444,6 +445,15 @@ async function handle(req, res) {
       setTimeout(() => process.exit(3), 300);
       return;
     }
+    // ---------- the US market watch: settings, a scan, a brief or a news check now ----------
+    if (p === "/api/uswatch") {
+      if (req.method === "GET") return send(res, 200, uswatch.settings());
+      if (req.method === "POST") return send(res, 200, uswatch.update(await readBody(req, 1e4)));
+    }
+    if (p === "/api/uswatch/run" && req.method === "POST") return send(res, 200, await uswatch.runOnce());
+    if (p === "/api/uswatch/brief" && req.method === "POST") return send(res, 200, await uswatch.brief(["pre", "open", "close"].includes(q.kind) ? q.kind : "pre"));
+    if (p === "/api/uswatch/news" && req.method === "POST") return send(res, 200, await uswatch.newsCheck());
+    if (p === "/api/uswatch/ai-test" && req.method === "POST") return send(res, 200, await uswatch.aiTest());
     // ---------- the Kuwait entry signal tested on the market's history ----------
     if (p === "/api/kwbacktest") {
       if (req.method === "GET") return send(res, 200, kwbacktest.status(q.market === "us" ? "us" : "kw"));
@@ -637,6 +647,7 @@ if (isMain) {
   const url = `http://localhost:${port}`;
   alerts.start();
   kwwatch.start();
+  uswatch.start();
   console.log(
     `\n  AskCharts ${VERSION} is running\n\n  Open:  ${url}\n  Stop:  Ctrl+C\n  Data:  ${store.DATA_DIR}\n`,
   );
