@@ -1,7 +1,7 @@
 // The Kuwait market scan: rows, filters and the buy-entry signal, on made-up daily bars.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scanRow, isEntry, FILTERS, tradedValue } from "../public/lib/kuwait-scan.js";
+import { scanRow, isEntry, isBaseSignal, FILTERS, tradedValue } from "../public/lib/kuwait-scan.js";
 import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
 
 function range(n, { start = 800, amp = 25, period = 20, vol = 100000 } = {}) {
@@ -41,7 +41,9 @@ test("a breakout on heavy buying volume is a buy-entry row and sorts first", () 
   assert.ok(hot.breakout.confirmed);
   assert.ok(FILTERS.breakout.test(hot));
   assert.ok(hot.buyToday > 90, `${hot.buyToday}`);
-  assert.equal(hot.entry, hot.flow.inflowPct >= 55 && hot.signalKey > 0, "entry is exactly its rules");
+  assert.equal(isBaseSignal(hot), hot.flow.inflowPct >= 55 && hot.signalKey > 0, "the breakout signal is exactly its rules");
+  assert.equal(hot.entry, isBaseSignal(hot) && hot.weekly > 0 && hot.rsi >= 50 && hot.rsi < 70 && hot.closePos >= 0.7, "entry adds the week, RSI and close");
+  assert.ok(hot.trail?.dist > 0, "a trailing stop distance");
   assert.ok(hot.score > calm.score, `${hot.score} vs ${calm.score}`);
   assert.equal(calm.entry, false);
 });
@@ -52,8 +54,11 @@ test("too few bars gives an Arabic error row instead of throwing", () => {
 });
 
 test("isEntry needs every rule", () => {
-  const ok = { breakout: { dir: "up", confirmed: true }, flow: { inflowPct: 60 }, buyToday: 70, signalKey: 1 };
+  const ok = { breakout: { dir: "up", confirmed: true }, flow: { inflowPct: 60 }, buyToday: 70, signalKey: 1, weekly: 1, rsi: 60, closePos: 0.8 };
   assert.ok(isEntry(ok));
+  assert.ok(!isEntry({ ...ok, weekly: 0 }), "the week must be trending up");
+  assert.ok(!isEntry({ ...ok, rsi: 72 }), "not overbought");
+  assert.ok(!isEntry({ ...ok, closePos: 0.5 }), "a close near the high");
   assert.ok(!isEntry({ ...ok, signalKey: 0 }));
   assert.ok(!isEntry({ ...ok, breakout: { dir: "up", confirmed: false } }));
   assert.ok(!isEntry({ ...ok, flow: { inflowPct: 50 } }));

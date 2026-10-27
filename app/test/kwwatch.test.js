@@ -38,8 +38,9 @@ test("the message names the stock, the breakout, the money and the plan, and say
     code: "KRE", ar: null, en: "Kuwait Real Estate Co.", price: 356,
     breakout: { level: 352.34 }, relVol: 1.6, flow: { inflowPct: 63 }, buyToday: 70, positives: 5, negatives: 1,
     plan: { entryZone: { from: 350.03, to: 354.65 }, stop: 344.64, targets: [{ price: 361.87, rr: 1.2 }] },
+    trail: { atr: 2.5, dist: 8.5 }, rsi: 61,
   });
-  for (const part of ["KRE", "352.34", "63%", "350.03", "344.64", "361.87", "1:1.2", "ليست توصية"]) assert.ok(text.includes(part), part);
+  for (const part of ["KRE", "352.34", "63%", "350.03", "344.64", "361.87", "وقف متحرك", "8.5", "ليست توصية"]) assert.ok(text.includes(part), part);
 });
 
 test("a watch notification goes into the alert log and reaches listeners", async () => {

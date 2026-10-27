@@ -331,8 +331,8 @@ export function readMarket(byTf, { main = "1D", symbol = "", sessionFraction = 1
   const up = brokeUp ? lv.filter((l) => price > l.hi && prior.some((b) => b.close <= l.hi) && l.touches >= 2).sort((a, b) => b.price - a.price)[0] : null;
   const dn = brokeDown ? lv.filter((l) => price < l.lo && prior.some((b) => b.close >= l.lo) && l.touches >= 2).sort((a, b) => a.price - b.price)[0] : null;
   let breakout = null;
-  if (up) breakout = { dir: "up", level: rp(up.price), confirmed: confirmVol >= 1.3, ar: confirmVol >= 1.3 ? "اختراق مؤكد بسيولة" : "اختراق بسيولة ضعيفة" };
-  else if (dn) breakout = { dir: "down", level: rp(dn.price), confirmed: confirmVol >= 1.3, ar: confirmVol >= 1.3 ? "كسر مؤكد بسيولة" : "كسر بسيولة ضعيفة" };
+  if (up) breakout = { dir: "up", level: rp(up.price), vol: Math.round(confirmVol * 10) / 10, confirmed: confirmVol >= 1.3, ar: confirmVol >= 1.3 ? "اختراق مؤكد بسيولة" : "اختراق بسيولة ضعيفة" };
+  else if (dn) breakout = { dir: "down", level: rp(dn.price), vol: Math.round(confirmVol * 10) / 10, confirmed: confirmVol >= 1.3, ar: confirmVol >= 1.3 ? "كسر مؤكد بسيولة" : "كسر بسيولة ضعيفة" };
   else if (res && dRes != null && dRes <= Math.max(0.6, (atrPct ?? 1) * 0.6) && (relVol ?? 0) >= 1)
     breakout = { dir: "near", level: rp(res.price), confirmed: false, ar: `قريب من اختراق ${rp(res.price)}` };
   else if (sup && dSup != null && dSup <= Math.max(0.6, (atrPct ?? 1) * 0.6) && (relVol ?? 0) >= 1)

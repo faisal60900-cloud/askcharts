@@ -133,14 +133,28 @@ export function update(patch = {}) {
 }
 
 const num = (v) => (v == null ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }));
+// The signal's record in the market's history (from the last historical test), for the message.
+export function track() {
+  const live = store.read("kwbacktest", null)?.live;
+  if (!live?.all?.n) return "";
+  const years = Object.keys(live.byYear || {}).sort();
+  const lastY = years.at(-1),
+    ly = live.byYear?.[lastY];
+  const sign = (v) => `${v > 0 ? "+" : ""}${num(v)}%`;
+  return `السجل التاريخي (${years[0]}–${lastY}): ${live.all.n} إشارة، متوسط ${sign(live.all.avgRet)} للصفقة بعد العمولة، ${live.all.profitable}% منها رابحة${ly?.n ? ` (سنة ${lastY}: ${sign(ly.avgRet)})` : ""}.`;
+}
+
 export function message(r) {
   const p = r.plan,
-    t1 = p?.targets?.[0];
+    tg = p?.targets || [];
   return [
     `${r.code}${r.ar ? ` (${r.ar})` : ` (${r.en})`} — السعر ${num(r.price)}`,
-    `اختراق ${num(r.breakout?.level)} ✓ بسيولة ${num(r.relVol)}x · سيولة داخلة ${r.flow?.inflowPct}% · شراء ${r.buyToday}%`,
-    `ميزان الإشارات ${r.positives}✓ ${r.negatives}✗`,
-    p ? `دخول ${num(p.entryZone.from)}–${num(p.entryZone.to)} · وقف ${num(p.stop)} · هدف ${num(t1?.price)} (1:${num(t1?.rr)})` : "",
+    `اختراق ${num(r.breakout?.level)} ✓ بسيولة ${num(r.breakout?.vol ?? r.relVol)}x · سيولة داخلة ${r.flow?.inflowPct}% · شراء ${r.buyToday}%`,
+    `الاتجاه الأسبوعي صاعد · RSI ${num(r.rsi)} · إغلاق قرب القمة · الإشارات ${r.positives}✓ ${r.negatives}✗`,
+    p ? `دخول ${num(p.entryZone.from)}–${num(p.entryZone.to)} · وقف أولي ${num(p.stop)}` : "",
+    r.trail ? `وقف متحرك: أعلى سعر بعد الدخول ناقص ${num(r.trail.dist)} (2.5 ATR)` : "",
+    tg.length ? `مقاومات قريبة: ${tg.map((t) => num(t.price)).join("، ")}` : "",
+    track(),
     "فلترة فنية بقواعد ثابتة، وليست توصية.",
   ]
     .filter(Boolean)

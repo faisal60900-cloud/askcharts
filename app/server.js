@@ -15,6 +15,7 @@ import * as feeds from "./lib/feeds.js";
 import * as imports from "./lib/imports.js";
 import * as alerts from "./lib/alerts.js";
 import * as kwwatch from "./lib/kwwatch.js";
+import * as kwbacktest from "./lib/kwbacktest.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
 import * as copilot from "./lib/copilot.js";
@@ -442,6 +443,11 @@ async function handle(req, res) {
       send(res, 200, { ok: true, note: "restarting" });
       setTimeout(() => process.exit(3), 300);
       return;
+    }
+    // ---------- the Kuwait entry signal tested on the market's history ----------
+    if (p === "/api/kwbacktest") {
+      if (req.method === "GET") return send(res, 200, kwbacktest.status());
+      if (req.method === "POST") return send(res, 200, kwbacktest.start(await readBody(req, 1e3)));
     }
     // ---------- the Kuwait market watch: settings, and a scan now ----------
     if (p === "/api/kwwatch") {

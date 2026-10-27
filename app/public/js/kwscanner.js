@@ -102,9 +102,10 @@ export function renderKwScan(box, app) {
     ["buyToday", "شراء اليوم%"],
     ["positives", "الإشارات"],
     ["entryZone", "منطقة الدخول"],
-    ["stop", "وقف الخسارة"],
-    ["target", "الهدف 1"],
-    ["rr", "ع:م"],
+    ["stop", "وقف أولي"],
+    ["trail", "وقف متحرك"],
+    ["target", "مقاومة قريبة"],
+    ["weekly", "الأسبوعي"],
     ["score", "التقييم"],
   ];
   const sortable = { code: 1, price: 1, changePct: 1, value: 1, relVol: 1, buyToday: 1, positives: 1, score: 1 };
@@ -136,13 +137,14 @@ export function renderKwScan(box, app) {
           <td><span class="up">${r.positives}✓</span> <span class="down">${r.negatives}✗</span></td>
           <td>${p ? `<bdi dir="ltr">${num(p.entryZone.from, 2)} – ${num(p.entryZone.to, 2)}</bdi>` : "—"}</td>
           <td class="down">${p ? num(p.stop, 2) : "—"}</td>
-          <td class="up">${t1 ? `${num(t1.price, 2)} <small class="muted">+${num(t1.pct)}%</small>` : "—"}</td>
-          <td class="${(t1?.rr ?? 0) >= 2 ? "up" : (t1?.rr ?? 0) < 1 ? "down" : ""}">${t1 ? "1:" + num(t1.rr) : "—"}</td>
+          <td>${r.trail ? `−${num(r.trail.dist, 2)}` : "—"}</td>
+          <td>${t1 ? `${num(t1.price, 2)} <small class="muted">+${num(t1.pct)}%</small>` : "—"}</td>
+          <td class="${(r.weekly ?? 0) > 0 ? "up" : (r.weekly ?? 0) < 0 ? "down" : ""}">${(r.weekly ?? 0) > 0 ? "صاعد" : (r.weekly ?? 0) < 0 ? "هابط" : "محايد"}</td>
           <td><b>${num(r.score)}</b></td></tr>`;
         })
         .join("")}</tbody></table>
       <div class="pad hint-text">${st.rows.some((r) => r.early) ? `<b class="kw-gold">الجلسة بدأت للتو لـ ${st.rows.filter((r) => r.early).length} سهم، فقُرئت على آخر جلسة مكتملة.</b><br>` : ""}${rows.length} سهم مطابق من ${st.rows.filter((r) => !r.error).length} · <b class="up">${entries} إشارة دخول</b> · ${st.rows.filter((r) => r.error).length} بلا بيانات · آخر مسح ${st.at ? new Date(st.at).toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit" }) : "—"}. اضغط على أي سهم لفتح شارته مع خطة المستويات.<br>
-      <b>إشارة دخول</b> = اختراق مؤكد بسيولة + سيولة داخلة 55% فأكثر + الشراء اليوم أكبر من البيع + ميزان إشارات إيجابي. منطقة الدخول ووقف الخسارة والأهداف محسوبة بقواعد فنية ثابتة من الشموع اليومية، وصفقات الشراء والبيع تقدير. هذه نتائج فلترة فنية وليست توصية، والقرار وحجم المخاطرة عليك.</div>`;
+      <b>إشارة دخول</b> = اختراق مؤكد بسيولة + سيولة داخلة 55% فأكثر + الشراء أكبر من البيع + ميزان إشارات إيجابي + <b>الاتجاه الأسبوعي صاعد + RSI بين 50 و70 + إغلاق قرب قمة اليوم</b>. الخروج المختبر تاريخيًا: <b>وقف متحرك</b> = أعلى سعر بعد الدخول ناقص 2.5 ATR (العمود «وقف متحرك»)، والمقاومة القريبة للمعلومة فقط. صفقات الشراء والبيع تقدير. هذه نتائج فلترة فنية وليست توصية، والقرار وحجم المخاطرة عليك.</div>`;
     t.querySelectorAll("th[data-k]").forEach((th) => {
       th.onclick = () => {
         const k = th.dataset.k;
@@ -162,6 +164,7 @@ export function renderKwScan(box, app) {
     <button class="btn ${st.entryOnly ? "primary" : ""}" id="kwEntry" title="${ENTRY_RULES.map((k) => FILTERS[k].ar).join(" + ")}">${st.entryOnly ? "✓ " : ""}إشارات دخول شراء فقط</button>
   </div>
   <div class="kw-watch" id="kwWatch"></div>
+  <div class="kw-watch" id="kwTrack"></div>
   <div class="row-flex kw-chips">${Object.entries(FILTERS)
     .map(([k, f]) => `<label class="kw-chip ${st.on.has(k) ? "on" : ""}"><input type="checkbox" data-fl="${k}" ${st.on.has(k) ? "checked" : ""} ${st.entryOnly ? "disabled" : ""}>${esc(f.ar)}</label>`)
     .join("")}</div></div>
@@ -209,6 +212,41 @@ export function renderKwScan(box, app) {
   prog();
   table();
   watchBox();
+  trackBox();
+
+  // 📊 the signal's record in the market's history (lib/kwbacktest.js), and a button to test again
+  async function trackBox(poll = false) {
+    const el = box.querySelector("#kwTrack");
+    if (!el) return;
+    let b;
+    try {
+      b = await api.get("/api/kwbacktest");
+    } catch {
+      el.hidden = true;
+      return;
+    }
+    const L = b.live,
+      sign = (v) => `${v > 0 ? "+" : ""}${num(v, 2)}%`;
+    const row = (label, x) => (x?.n ? `<tr><td>${label}</td><td>${x.n}</td><td class="${x.avgRet >= 0 ? "up" : "down"}">${sign(x.avgRet)}</td><td>${x.profitable != null ? x.profitable + "%" : "—"}</td><td>${x.profitFactor ?? "—"}</td><td>${num(x.avgDays)}</td></tr>` : "");
+    el.innerHTML = b.running
+      ? `<span class="hint-text">📊 جاري اختبار الإشارة على تاريخ السوق… ${b.done} من ${b.of} سهم</span>`
+      : L?.all?.n
+        ? `<div class="row-flex"><b>📊 سجل إشارة الدخول تاريخيًا</b><span class="hint-text">${b.stocks} سهم منذ ${esc(b.from)} · بعد عمولة تقديرية 0.3%</span><button class="btn" id="kwBtRun">أعد الاختبار</button></div>
+          <table class="t kw-t kw-bt"><thead><tr><th>الفترة</th><th>إشارات</th><th>متوسط الصفقة</th><th>رابحة</th><th>معامل الربح</th><th>أيام</th></tr></thead><tbody>
+          ${row("كل الفترة", L.all)}${row("2021–2024 (اختيرت عليها الشروط)", L.train)}${row("2025–2026 (للتأكد)", L.check)}
+          ${Object.entries(L.byYear || {}).map(([y, x]) => row(`سنة ${y}`, x)).join("")}
+          ${row("للمقارنة: الشروط القديمة + البيع عند الهدف الأول", b.grid?.["base|t1"] && { ...b.grid["base|t1"].train, n: b.grid["base|t1"].train.n + b.grid["base|t1"].check.n, avgRet: Math.round(((b.grid["base|t1"].train.avgRet * b.grid["base|t1"].train.n + b.grid["base|t1"].check.avgRet * b.grid["base|t1"].check.n) / (b.grid["base|t1"].train.n + b.grid["base|t1"].check.n)) * 100) / 100, profitable: null, profitFactor: null, avgDays: b.grid["base|t1"].train.avgDays })}
+          </tbody></table>
+          <div class="hint-text">الدخول بسعر افتتاح الجلسة التالية، والخروج بالوقف المتحرك (أو بعد 40 جلسة). النتائج الماضية لا تضمن المستقبل، وسنة 2026 كانت أضعف.</div>`
+        : `<div class="row-flex"><span class="hint-text">📊 ما انختبرت الإشارة على تاريخ السوق بعد.</span><button class="btn" id="kwBtRun">اختبرها على آخر 6 سنوات</button></div>`;
+    const run = el.querySelector("#kwBtRun");
+    if (run)
+      run.onclick = async () => {
+        await api.post("/api/kwbacktest", { limit: 1500 });
+        trackBox(true);
+      };
+    if (b.running || poll) setTimeout(() => box.querySelector("#kwTrack") && (b.running || poll) && trackBox(b.running), 3000);
+  }
 
   // 🔔 the server-side watch: it scans during the session and sends each new entry signal
   async function watchBox() {

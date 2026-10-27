@@ -1,6 +1,7 @@
 // ماسح السوق الكويتي: one row per stock from its daily bars, read with the Market Reader, and the
 // filters the scan offers. Pure numbers in and out, so it can be tested without a page.
-import { readMarket, kuwaitSessionFraction } from "./market-reader.js";
+import { readMarket, kuwaitSessionFraction, readTimeframe } from "./market-reader.js";
+import { resample } from "./series.js";
 
 // Average daily traded value over the last n sessions, in the stock's own money (Kuwaiti bars
 // are in fils, so / 1000 gives dinars).
@@ -20,11 +21,30 @@ export const FILTERS = {
   buying: { ar: "الشراء اليوم أكبر من البيع", test: (r) => (r.buyToday ?? r.buyPeriod ?? 0) > 50 },
   signals: { ar: "ميزان الإشارات إيجابي", test: (r) => (r.signalKey ?? 0) > 0 },
   rr: { ar: "العائد:المخاطرة 1.5 فأكثر", test: (r) => (r.plan?.targets?.[0]?.rr ?? 0) >= 1.5 },
+  weeklyUp: { ar: "الاتجاه الأسبوعي صاعد", test: (r) => (r.weekly ?? 0) > 0 },
+  rsiZone: { ar: "RSI بين 50 و70", test: (r) => r.rsi >= 50 && r.rsi < 70 },
+  strongClose: { ar: "إغلاق قرب قمة اليوم", test: (r) => (r.closePos ?? 0) >= 0.7 },
 };
 
-// "إشارة دخول": a confirmed breakout, money coming in, buying ahead and the checks leaning positive
-export const ENTRY_RULES = ["breakout", "inflow", "buying", "signals"];
+// The breakout signal: a confirmed breakout, money coming in, buying ahead and the checks leaning
+// positive. On its own it reached its first target 65% of the time from 2021 to 2026 but lost money
+// on average (the target was near and the stop far). With the week trending up, RSI 50-70 and a
+// close near the day's high, and a trailing stop instead of the near target, it made money both on
+// the years the rules were chosen on and on the years kept aside (lib/kwbacktest.js).
+export const BASE_RULES = ["breakout", "inflow", "buying", "signals"];
+export const ENTRY_RULES = [...BASE_RULES, "weeklyUp", "rsiZone", "strongClose"];
+// the trailing stop: the highest price since entry minus this many ATRs
+export const TRAIL_ATR = 2.5;
 export const isEntry = (row) => ENTRY_RULES.every((k) => FILTERS[k].test(row));
+export const isBaseSignal = (row) => BASE_RULES.every((k) => FILTERS[k].test(row));
+
+const closePos = (b) => (b && b.high > b.low ? Math.round(((b.close - b.low) / (b.high - b.low)) * 100) / 100 : 0.5);
+function weekTrend(bars) {
+  const last = bars.at(-1);
+  const wk = resample(bars, "1W").filter((w) => w.time + 7 * 86400 <= last.time + 86400);
+  const r = wk.length >= 30 ? readTimeframe(wk.slice(-150)) : null;
+  return r ? r.trend : 0;
+}
 
 // One stock: its reading on the daily bars, flattened into what the table and filters need.
 export function scanRow(stock, bars, now = Date.now()) {
@@ -58,6 +78,10 @@ export function scanRow(stock, bars, now = Date.now()) {
     rsi: r.rsi,
     plan: r.plan,
     early,
+    // the week trend from the weeks that have closed (this week's is still forming)
+    weekly: weekTrend(bars),
+    closePos: closePos(bars.at(-1)),
+    trail: r.atrPct && r.price ? { atr: TRAIL_ATR, dist: Math.round(((r.atrPct * r.price) / 100) * TRAIL_ATR * 100) / 100 } : null,
   };
   // one number to sort by: what the filters reward, with volume as the tie breaker
   row.score =
