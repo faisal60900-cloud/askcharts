@@ -42,7 +42,11 @@ export const TRAIL_ATR = 2.5;
 // trailing stop (3 ATR): +1.65% and +1.68% a trade after costs.
 export const US_ENTRY_RULES = [...BASE_RULES, "vol2"];
 export const US_TRAIL_ATR = 3;
-export const US_LIVE = { variant: "vol2", exit: "trail3" };
+// Managed with five targets at 1R to 5R, a fifth sold at each, the stop to the entry after the first
+// and to the previous target after each next one: 53% of trades ended in profit (37% with the
+// trailing stop alone), for +0.8% a trade on average instead of +1.7%.
+export const US_TARGETS_R = [1, 2, 3, 4, 5];
+export const US_LIVE = { variant: "vol2", exit: "scale5" };
 export const entryRules = (market) => (market === "us" ? US_ENTRY_RULES : ENTRY_RULES);
 export const isEntry = (row, market = row?.market || "kw") => entryRules(market).every((k) => FILTERS[k].test(row));
 export const isBaseSignal = (row) => BASE_RULES.every((k) => FILTERS[k].test(row));

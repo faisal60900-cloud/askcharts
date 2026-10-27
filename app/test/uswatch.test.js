@@ -34,10 +34,10 @@ test("the entry message has the breakout, entry zone, stop, trailing stop, targe
     code: "NVDA", en: "NVIDIA", price: 182.4, changePct: 3.1, breakout: { level: 178.2, vol: 2.6 }, flow: { inflowPct: 64 }, buyToday: 81,
     plan: { entryZone: { from: 177.6, to: 179 }, stop: 172.3, targets: [{ price: 190 }] }, trail: { atr: 3, dist: 12.4 },
   };
-  const t = U.entryMessage(r, { market: { spy: { up: false } }, note: "قراءة تجريبية" });
-  for (const part of ["NVDA", "178.2$", "2.6x", "177.6$", "172.3$", "12.4$", "الأهداف", "190$", "تحت متوسط 50", "قراءة تجريبية", "وليست توصية"]) assert.ok(t.includes(part), part);
-  // targets at 2R and 3R from the middle of the entry zone (178.3, risk 6)
-  assert.ok(t.includes("190.3$") && t.includes("196.3$"), t);
+  const t = U.entryMessage(r, { market: { spy: { up: false } }, note: "قراءة تجريبية", reach: { 1: 54, 2: 38, 3: 29, 4: 22, 5: 15 } });
+  for (const part of ["NVDA", "178.2$", "2.6x", "177.6$", "172.3$", "الأهداف الخمسة", "190$", "تحت متوسط 50", "قراءة تجريبية", "بيع 20%", "لسعر الدخول", "وليست توصية"]) assert.ok(t.includes(part), part);
+  // five targets at 1R..5R from the middle of the entry zone (178.3, risk 6), each with its reach
+  for (const [px, hit] of [["184.3$", "54%"], ["190.3$", "38%"], ["196.3$", "29%"], ["202.3$", "22%"], ["208.3$", "15%"]]) assert.ok(t.includes(px) && t.includes(hit), px);
 });
 
 test("settings are clamped", () => {
@@ -50,6 +50,6 @@ test("settings are clamped", () => {
 
 test("a price that ran past the entry zone is flagged, and one inside it is said so", () => {
   const base = { code: "LMT", en: "Lockheed", changePct: 5, breakout: { level: 594.2, vol: 2.3 }, flow: { inflowPct: 72 }, buyToday: 95, plan: { entryZone: { from: 589, to: 599.4 }, stop: 576.9, targets: [] }, trail: { atr: 3, dist: 52 } };
-  assert.match(U.entryMessage({ ...base, price: 635.2 }), /فوق منطقة الدخول بـ 6%.*وتجاوز الهدف الأول/);
+  assert.match(U.entryMessage({ ...base, price: 635.2 }), /فوق منطقة الدخول بـ 6%.*وتجاوز الهدف 2/);
   assert.match(U.entryMessage({ ...base, price: 595 }), /داخل منطقة الدخول/);
 });

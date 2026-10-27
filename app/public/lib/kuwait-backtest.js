@@ -41,12 +41,18 @@ export const EXITS = {
   trail: { ar: "وقف متحرك يلحق السعر (2.5 ATR)", trail: 2.5, max: 40 },
   trailT1: { ar: "نصف عند الهدف الأول والباقي بوقف متحرك", half: true, trail: 2.5, max: 40 },
   trail3: { ar: "وقف متحرك أوسع (3 ATR)", trail: 3, max: 60 },
+  // five targets at 1R..5R, a fifth of the position at each; the stop moves to the entry after the
+  // first target and to the previous target after each next one
+  scale5: { ar: "5 أهداف: 20% عند كل هدف + الوقف للدخول بعد الهدف الأول", scale: [1, 2, 3, 4, 5], max: 60 },
+  // the same with nearer targets (0.75R steps), for a higher share of trades that reach the first ones
+  scale5n: { ar: "5 أهداف قريبة (0.75R، 1.5R…) + الوقف للدخول بعد الأول", scale: [0.75, 1.5, 2.25, 3, 4], max: 60 },
 };
 
 export function simulate(bars, i, entry, stop, atrAtEntry, t1, x) {
   const n = bars.length,
     R = entry - stop;
   const last = Math.min(n - 1, i + x.max);
+  if (x.scale) return scaleOut(bars, i, entry, stop, x, last);
   const target = x.target === "t1" ? t1 : x.target ? entry + R * x.target : null;
   let s = stop,
     high = entry,
@@ -67,6 +73,46 @@ export function simulate(bars, i, entry, stop, atrAtEntry, t1, x) {
     }
   }
   return done(bars[last].close, "timeout", last);
+}
+
+// Selling a fifth at each target. A day that reaches the stop is read first (the careful way).
+function scaleOut(bars, i, entry, stop, x, last) {
+  const R = entry - stop,
+    targets = x.scale.map((m) => entry + R * m),
+    part = 1 / targets.length;
+  let s = stop,
+    hit = 0,
+    sold = 0,
+    value = 0;
+  const done = (exitPx, k, result) => {
+    value += (1 - sold) * exitPx;
+    const ret = ((value - entry) / entry) * 100 - COST;
+    return { result, days: k - i, ret: Math.round(ret * 100) / 100, r: Math.round(((value - entry) / R) * 100) / 100, targetsHit: hit };
+  };
+  for (let k = i + 1; k <= last; k++) {
+    const b = bars[k];
+    if (b.low <= s) return done(b.open <= s ? b.open : s, k, hit ? "partial" : "loss");
+    while (hit < targets.length && b.high >= targets[hit]) {
+      value += part * Math.max(targets[hit], hit === 0 && k === i + 1 ? b.open : targets[hit]);
+      sold += part;
+      hit++;
+      s = hit === 1 ? entry : targets[hit - 2];
+    }
+    if (hit === targets.length) return { result: "win", days: k - i, ret: Math.round((((value - entry) / entry) * 100 - COST) * 100) / 100, r: Math.round(((value - entry) / R) * 100) / 100, targetsHit: hit };
+  }
+  return done(bars[last].close, last, hit ? "partial" : "timeout");
+}
+
+// How far a trade went for us before its first stop: the highest high, in R, until a day's low
+// reaches the stop (within 60 sessions). Target k was reached when this is k or more.
+export function excursion(bars, i, entry, stop, max = 60) {
+  const R = entry - stop;
+  let best = 0;
+  for (let k = i + 1; k <= Math.min(bars.length - 1, i + max); k++) {
+    if (bars[k].low <= stop) break;
+    best = Math.max(best, (bars[k].high - entry) / R);
+  }
+  return Math.round(best * 100) / 100;
 }
 
 // The US market: more money, stronger momentum (strong stocks often stay above RSI 70) and a big
@@ -130,6 +176,7 @@ export function signalsFor(stock, bars, { market = "kw", index = null } = {}) {
     const exits = {};
     for (const [k, x] of Object.entries(EXITS)) exits[k] = simulate(bars, i, entry, stop, a, target, x);
     const main = exits.t1;
+    const mfeR = excursion(bars, i, entry, stop);
     const range = b.high - b.low;
     out.push({
       code: stock.code,
@@ -139,6 +186,7 @@ export function signalsFor(stock, bars, { market = "kw", index = null } = {}) {
       target,
       ...main,
       exits,
+      mfeR,
       ret10: Math.round((((bars[Math.min(n - 1, i + 10)].close - entry) / entry) * 100 - COST) * 100) / 100,
       // the facts the stricter rules test
       rsi: Math.round(rsi[i] || 0),
@@ -176,6 +224,10 @@ export function stats(events, exit = null) {
     avgRet10: r2(sum("ret10") / n),
     total: r2(sum("ret")),
     profitable: Math.round((events.filter((e) => e.ret > 0).length / n) * 100),
+    // how often each risk multiple was reached before the first stop
+    reach: events[0]?.mfeR != null ? Object.fromEntries([0.75, 1, 1.5, 2, 2.25, 3, 4, 5].map((m) => [m, Math.round((events.filter((e) => e.mfeR >= m).length / n) * 100)])) : undefined,
+    // trades that ended at breakeven or better (with the stop moved to the entry, "no loss")
+    noLoss: Math.round((events.filter((e) => e.ret > -COST - 0.01).length / n) * 100),
     avgR: r2(sum("r") / n),
     profitFactor: loss ? r2(gain / loss) : null,
     avgDays: Math.round((sum("days") / n) * 10) / 10,

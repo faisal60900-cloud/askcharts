@@ -10,7 +10,7 @@ import * as kwwatch from "./kwwatch.js";
 import { news as newsOf } from "./market-info.js";
 import { write, ANALYST } from "./ai-write.js";
 import * as aiw from "./ai-write.js";
-import { scanRow } from "../public/lib/kuwait-scan.js";
+import { scanRow, US_TARGETS_R } from "../public/lib/kuwait-scan.js";
 import { ema } from "../public/lib/indicators.js";
 
 const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true };
@@ -110,15 +110,19 @@ async function universe(size) {
     .map((r) => ({ code: r.ticker, symbol: r.symbol, en: r.name.replace(/\s+(Common Stock|Class [A-Z] Common Stock|Ordinary Shares).*$/i, ""), ar: null }));
 }
 
+// how often each target was reached before the first stop, from the last US historical test
+export const reachOf = () => store.read("usbacktest", null)?.live?.all?.reach || null;
+
 export function track() {
   const live = store.read("usbacktest", null)?.live;
   if (!live?.all?.n) return "";
   const ys = Object.keys(live.byYear || {}).sort();
-  return `📊 السجل التاريخي (${ys[0]}–${ys.at(-1)}): ${live.all.n} إشارة، متوسط ${pct(live.all.avgRet)} للصفقة بعد العمولة، ${live.all.profitable}% رابحة. كانت سلبية في سنوات هبوط السوق (${ys.filter((y) => live.byYear[y].avgRet < 0).join("، ") || "—"}).`;
+  const bad = ys.filter((y) => live.byYear[y].avgRet < 0);
+  return `📊 السجل التاريخي بهالخطة (${ys[0]}–${ys.at(-1)}): ${live.all.n} إشارة، ${live.all.profitable}% منها انتهت بربح، ومتوسط ${pct(live.all.avgRet)} للصفقة بعد العمولة.${bad.length ? ` كانت سلبية في ${bad.join("، ")}.` : ""}`;
 }
 
 // The entry message: everything a trader needs to judge it, in order.
-export function entryMessage(r, { market = null, note = null } = {}) {
+export function entryMessage(r, { market = null, note = null, reach = reachOf() } = {}) {
   const p = r.plan;
   const entry = p ? (p.entryZone.from + p.entryZone.to) / 2 : r.price;
   const R = p ? entry - p.stop : null;
@@ -129,10 +133,11 @@ export function entryMessage(r, { market = null, note = null } = {}) {
     `السعر الآن: ${usd(r.price)} (${pct(r.changePct)} اليوم)`,
     `📈 الاختراق: ${usd(r.breakout?.level)} ✓ بسيولة ${n2(r.breakout?.vol, 1)}x · سيولة داخلة ${r.flow?.inflowPct}% · الشراء ${r.buyToday}%`,
     p ? `🎯 منطقة الدخول: ${usd(p.entryZone.from)} – ${usd(p.entryZone.to)}` : "",
-    away != null && away > 3 ? `⚠️ السعر الآن فوق منطقة الدخول بـ ${n2(away, 1)}%${R && r.price >= tR(2) ? " وتجاوز الهدف الأول" : ""}: الدخول من هنا مخاطرته أعلى لأن الوقف صار أبعد، والانتظار لرجوع السعر للمنطقة أحوط.` : away != null && away > 0 ? `السعر قريب من منطقة الدخول (فوقها بـ ${n2(away, 1)}%).` : p ? "✅ السعر داخل منطقة الدخول الآن." : "",
+    away != null && away > 3 ? `⚠️ السعر الآن فوق منطقة الدخول بـ ${n2(away, 1)}%${R && r.price >= tR(1) ? ` وتجاوز الهدف ${US_TARGETS_R.filter((m) => r.price >= tR(m)).length}` : ""}: الدخول من هنا مخاطرته أعلى لأن الوقف صار أبعد، والانتظار لرجوع السعر للمنطقة أحوط.` : away != null && away > 0 ? `السعر قريب من منطقة الدخول (فوقها بـ ${n2(away, 1)}%).` : p ? "✅ السعر داخل منطقة الدخول الآن." : "",
     p ? `🛑 وقف الخسارة الأولي: ${usd(p.stop)} (${pct(-((entry - p.stop) / entry) * 100)} من الدخول)` : "",
-    r.trail ? `🔁 وقف متحرك بعد الدخول: أعلى سعر يوصله السهم ناقص ${usd(r.trail.dist)} (${r.trail.atr} ATR)` : "",
-    R ? `🎯 الأهداف: الأول ${usd(tR(2))} (${pct((2 * R * 100) / entry)}) · الثاني ${usd(tR(3))} (${pct((3 * R * 100) / entry)})${p.targets?.length ? ` · مقاومات في الطريق: ${p.targets.map((t) => usd(t.price)).join("، ")}` : ""}` : "",
+    R ? `🎯 الأهداف الخمسة (ونسبة وصول السعر لها تاريخيًا قبل الوقف):\n${US_TARGETS_R.map((m, k) => `${["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"][k]} ${usd(tR(m))} (${pct((m * R * 100) / entry)})${reach?.[m] != null ? ` — ${reach[m]}%` : ""}`).join("\n")}` : "",
+    R ? "📋 إدارة الصفقة: بيع 20% عند كل هدف · بعد الهدف الأول ارفع الوقف لسعر الدخول · وبعد كل هدف ارفعه للهدف اللي قبله." : "",
+    p?.targets?.length ? `🧱 مقاومات في الطريق: ${p.targets.map((t) => usd(t.price)).join("، ")}` : "",
     market?.spy ? (market.spy.up ? "✅ السوق العام صاعد (S&P 500 فوق متوسط 50)" : "⚠️ السوق العام تحت متوسط 50: الإشارات تاريخيًا أضعف في هالحالة") : "",
     note ? `🧠 قراءة المحلل:\n${note}` : "",
     track(),
@@ -171,7 +176,7 @@ export async function runOnce({ force = false } = {}) {
       state.sent[`${r.code}|${r.breakout?.level}|${date}`] = Date.now();
       const heads = (await newsOf(r.symbol).catch(() => ({ items: [] }))).items.slice(0, 4).map((h) => h.title);
       const note = await ai(
-        `حلل إشارة الاختراق هذي في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع السوق العام، المخاطر (المسافة للوقف، المقاومات القريبة، أي خبر مهم)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}\n\nآخر عناوين أخبار السهم (بالإنجليزي):\n${heads.join("\n") || "لا توجد"}\n\nحالة السوق:\n${market ? snapshotText(market) : "غير متاحة"}`,
+        `حلل إشارة الاختراق هذي في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع السوق العام، أي الأهداف الخمسة تبدو واقعية مع المقاومات في الطريق، المخاطر (المسافة للوقف، أي خبر مهم)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}\n\nآخر عناوين أخبار السهم (بالإنجليزي):\n${heads.join("\n") || "لا توجد"}\n\nحالة السوق:\n${market ? snapshotText(market) : "غير متاحة"}`,
         2500,
       );
       await send(entryMessage(r, { market, note }), { symbol: r.symbol, name: "" });
@@ -248,6 +253,14 @@ export async function newsCheck() {
   state.lastNewsAt = Date.now();
   saveState();
   return { sent };
+}
+
+// The message a stock would get now, without sending it (nothing goes to Telegram).
+export async function preview(code) {
+  const sym = `US:${String(code || "").toUpperCase().replace(/[^A-Z.]/g, "")}`;
+  const r = scanRow({ code: sym.slice(3), symbol: sym, en: sym.slice(3), ar: null }, (await getCandles(sym, "1D", 300)).candles || [], Date.now(), { market: "us" });
+  if (r.error) return { error: r.error };
+  return { entry: r.entry, text: entryMessage(r, { market: await snapshot().catch(() => null) }) };
 }
 
 export async function aiTest() {

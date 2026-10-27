@@ -81,3 +81,19 @@ test("the market filter reads the index on the signal's own day", () => {
   const mid = bars[800].time;
   assert.ok(ev.filter((e) => e.time > mid + 30 * 86400).every((e) => e.marketUp === false));
 });
+
+import { excursion } from "../public/lib/kuwait-backtest.js";
+
+test("five targets: a fifth at each, the stop to the entry after the first, and how far a trade got", () => {
+  const b = (o, h, l, c) => ({ time: 0, open: o, high: h, low: l, close: c, volume: 1 });
+  // entry 100, stop 95 (R = 5): targets 105, 110, 115, 120, 125
+  const run = [b(99, 100, 98, 99), b(100, 106, 99, 105), b(105, 111, 104, 110), b(110, 112, 99, 100)];
+  const r = simulate(run, 0, 100, 95, 2, 104, EXITS.scale5);
+  // 1/5 at 105, 1/5 at 110, then the stop (moved to 105 after the second target) takes the rest at 105
+  assert.equal(r.targetsHit, 2);
+  assert.equal(r.result, "partial");
+  assert.equal(r.r, Math.round(((0.2 * 105 + 0.2 * 110 + 0.6 * 105 - 100) / 5) * 100) / 100);
+  assert.equal(excursion(run, 0, 100, 95), 2.4, "a high of 112 is 2.4R before any stop");
+  const lose = [b(99, 100, 98, 99), b(99, 101, 94, 95)];
+  assert.equal(simulate(lose, 0, 100, 95, 2, 104, EXITS.scale5).result, "loss");
+});
