@@ -28,6 +28,7 @@ import { openAlertDialog as openAlertCard, isChannel, isMoving } from "./alertdi
 import { PRODUCTS, SOCIAL, ALL_PRODUCTS, DEFAULT_FAVORITES } from "./products.js";
 import { renderReader, readerChanged } from "./marketreader.js";
 import { initReaderOverlay } from "./readeroverlay.js";
+import { renderKwScan } from "./kwscanner.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const LW = window.LightweightCharts;
@@ -242,6 +243,14 @@ export function initPanels(app) {
     app.settings.readerOnRail = true;
     app.persist();
   }
+  if (Array.isArray(app.settings.railFavorites) && !app.settings.kwscanOnRail) {
+    if (!app.settings.railFavorites.includes("kwscan")) {
+      const at = app.settings.railFavorites.indexOf("reader") + 1;
+      app.settings.railFavorites.splice(at, 0, "kwscan");
+    }
+    app.settings.kwscanOnRail = true;
+    app.persist();
+  }
   const favorites = () => (Array.isArray(app.settings.railFavorites) ? app.settings.railFavorites : DEFAULT_FAVORITES);
   const svg28 = (body) => `<svg viewBox="0 0 28 28">${body}</svg>`;
   const openProduct = (p) => (p.panel ? showSide(p.panel, true) : showBottom(p.bottom));
@@ -445,6 +454,7 @@ export function initPanels(app) {
     if (!bottomEl.classList.contains("collapsed"))
       ({
         tester: renderTester,
+        kwscan: () => renderKwScan(bottom, app),
         screener: renderScreener,
         heatmap: renderHeatmap,
         seasonals: () => renderSeasonals(bottom, app),

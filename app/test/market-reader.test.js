@@ -154,3 +154,16 @@ test("prices keep the precision a cheap stock or a coin needs", () => {
   assert.equal(rp(3.52449), 3.524);
   assert.equal(rp(0.000123456), 0.0001235);
 });
+
+test("near prices don't chain into one wide level, and zones stay within ±0.6 ATR", () => {
+  // swing lows stepping down 2 at a time from 700 to 600: one 100-wide level before the fix
+  const bars = [];
+  let t = 1_700_000_000;
+  for (let i = 0; i < 300; i++) {
+    const mid = 700 - (i % 100) * 1 + 20 * Math.sin((i / 10) * 2 * Math.PI);
+    bars.push({ time: (t += 86400), open: mid, close: mid + 1, high: mid + 3, low: mid - 3, volume: 1000 });
+  }
+  for (const l of clusters(bars)) assert.ok(l.hi - l.lo <= 8, `${l.lo}-${l.hi}`);
+  const r = readMarket({ "1D": bars });
+  for (const z of [r.demandZone, r.supplyZone, r.plan?.entryZone].filter(Boolean)) assert.ok(z.to - z.from <= 10, JSON.stringify(z));
+});

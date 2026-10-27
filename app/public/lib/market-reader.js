@@ -56,7 +56,9 @@ export function clusters(bars, { strength = 3, lookback = 300 } = {}) {
   const groups = [];
   for (const s of swings(part, strength).sort((a, b) => a.price - b.price)) {
     const g = groups.at(-1);
-    if (g && s.price - g.hi <= avg * 0.5) {
+    // join the level within half a bar's range, and never let one level grow past one bar's range
+    // (a chain of near prices would otherwise make a 600-800 "level")
+    if (g && s.price - g.hi <= avg * 0.5 && s.price - g.lo <= avg) {
       g.prices.push(s.price);
       g.hi = s.price;
       g.kinds.add(s.kind);
@@ -260,7 +262,8 @@ export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
   const prevVol = volAvg > 0 && vols.length > 1 ? vols.at(-2) / volAvg : null;
   const squeeze = ok(atrNow) && ok(atrAvg) && atrNow < atrAvg * 0.8;
 
-  const zone = (l) => (l ? { from: rp(Math.min(l.lo, l.price - atrNow * 0.15)), to: rp(Math.max(l.hi, l.price + atrNow * 0.15)) } : null);
+  // a zone is the level's own range, widened to at least ±0.15 ATR and never past ±0.6 ATR
+  const zone = (l) => (l ? { from: rp(Math.max(l.price - atrNow * 0.6, Math.min(l.lo, l.price - atrNow * 0.15))), to: rp(Math.min(l.price + atrNow * 0.6, Math.max(l.hi, l.price + atrNow * 0.15))) } : null);
   const sup = m.support,
     res = m.resistance;
   const dSup = sup ? pct(price, sup.price) : null; // how far above support, %
@@ -342,7 +345,7 @@ export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
   const A = atrNow || price * 0.01;
   let entry;
   if (breakout?.dir === "up") entry = { from: breakout.level - A * 0.3, to: breakout.level + A * 0.3, why: `إعادة اختبار الاختراق ${rp(breakout.level)}` };
-  else if (sup) entry = { from: Math.min(sup.lo, sup.price - A * 0.15), to: Math.max(sup.hi, sup.price + A * 0.15), why: `منطقة الطلب عند الدعم ${rp(sup.price)}` };
+  else if (sup) entry = { from: Math.max(sup.price - A * 0.6, Math.min(sup.lo, sup.price - A * 0.15)), to: Math.min(sup.price + A * 0.6, Math.max(sup.hi, sup.price + A * 0.15)), why: `منطقة الطلب عند الدعم ${rp(sup.price)}` };
   else entry = { from: price - A * 0.5, to: price, why: "تحت السعر الحالي بنصف ATR" };
   const mid = (entry.from + entry.to) / 2;
   const stop = Math.min(entry.from - A * 0.5, mid - A);

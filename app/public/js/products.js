@@ -6,6 +6,7 @@
 export const PRODUCTS = [
   { id: "copilot", label: "AskCharts AI", tip: "AskCharts AI", panel: "copilot", icon: '<circle class="fill" cx="14" cy="2.44" r="2.16"/><path d="M14 4.5v3.83"/><rect x="1.7" y="8.33" width="24.6" height="18.84" rx="6.26"/><path class="fill" d="M1.7 14.36h-.63a2.14 2.14 0 0 0-2.14 2.14v2.64a2.14 2.14 0 0 0 2.14 2.14h.63zM26.3 14.36h.63a2.14 2.14 0 0 1 2.14 2.14v2.64a2.14 2.14 0 0 1-2.14 2.14h-.63z"/><circle class="fill" cx="9.11" cy="16.62" r="1.88"/><circle class="fill" cx="18.89" cy="16.62" r="1.88"/><path d="M10.74 21.27Q14 24.91 17.26 21.27"/>' },
   { id: "reader", label: "Market Reader", tip: "قارئ السوق (Market Reader)", panel: "reader", icon: '<path d="M3 25h22"/><path d="M6 21v-6M11 21V9M16 21v-8M21 21V5"/><circle cx="21" cy="5" r="1.6" class="fill"/>' },
+  { id: "kwscan", label: "Kuwait scanner", tip: "ماسح السوق الكويتي", bottom: "kwscan", icon: '<circle cx="12" cy="12" r="8.5"/><path d="M18.2 18.2L25 25"/><path d="M8 14.5l2.6-3 2.2 2 3.2-4.5"/><path d="M14 9h2v2"/>' },
   { id: "screener", label: "Screener", bottom: "screener", icon: '<circle cx="14" cy="14" r="13.4"/><circle cx="14" cy="14" r="7.3"/><path d="M14 14l8.5-8.5"/><circle cx="14" cy="14" r="1.1" class="fill"/>' },
   { id: "pine", label: "Pine Editor", panel: "pine", icon: '<path d="M14 3l6 8H8z"/><path d="M8.5 13.5h11l6.5 12H2z"/>' },
   { id: "calendar", label: "Calendars", panel: "calendar", icon: '<rect x="2.5" y="5" width="23" height="20.5" rx="2.5"/><path d="M2.5 10.5h23M9 2.5v5M19 2.5v5"/>' },
@@ -22,4 +23,4 @@ export const SOCIAL = [
 ];
 export const ALL_PRODUCTS = [...PRODUCTS, ...SOCIAL];
 // The toolbar before anything is starred or unstarred: TradingView's own set, for this terminal.
-export const DEFAULT_FAVORITES = ["copilot", "reader", "screener", "pine", "calendar", "news", "notifications"];
+export const DEFAULT_FAVORITES = ["copilot", "reader", "kwscan", "screener", "pine", "calendar", "news", "notifications"];
