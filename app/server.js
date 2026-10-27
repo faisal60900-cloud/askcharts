@@ -449,6 +449,9 @@ async function handle(req, res) {
       if (req.method === "POST") return send(res, 200, kwwatch.update(await readBody(req, 1e4)));
     }
     if (p === "/api/kwwatch/run" && req.method === "POST") return send(res, 200, await kwwatch.runOnce());
+    if (p === "/api/kwwatch/telegram-link" && req.method === "POST") return send(res, 200, await kwwatch.linkTelegram());
+    if (p === "/api/kwwatch/telegram-test" && req.method === "POST")
+      return send(res, 200, await kwwatch.sendTelegram("✅ AskCharts: رسالة تجريبية من ماسح السوق الكويتي."));
     if (p === "/api/kwwatch/whatsapp-test" && req.method === "POST")
       return send(res, 200, await kwwatch.sendWhatsApp("✅ AskCharts: رسالة تجريبية. تنبيهات إشارات الدخول من ماسح السوق الكويتي راح توصلك هنا."));
     if (p === "/api/alerts/log") return send(res, 200, alerts.history());

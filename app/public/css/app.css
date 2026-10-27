@@ -2934,3 +2934,5 @@ button.sr-chip:hover { background: var(--chrome-hover); }
 .kw-phone-box { margin-top: 8px; padding: 8px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 6px; }
 .kw-phone-box code { background: var(--hover); padding: 1px 5px; border-radius: 4px; }
 .kw-phone-box details summary { cursor: pointer; }
+.kw-tg ol { margin: 4px 0; padding-inline-start: 18px; line-height: 1.7; }
+.kw-tg code { background: var(--hover); padding: 1px 5px; border-radius: 4px; }

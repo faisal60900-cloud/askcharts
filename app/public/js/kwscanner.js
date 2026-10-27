@@ -227,16 +227,25 @@ export function renderKwScan(box, app) {
       <label class="field">كل<select id="kwWEvery">${[5, 10, 15, 30].map((m) => `<option value="${m}" ${m === w.every ? "selected" : ""}>${m} دقيقة</option>`).join("")}</select></label>
       <label class="kw-chip ${w.afterClose ? "on" : ""}"><input type="checkbox" id="kwWClose" ${w.afterClose ? "checked" : ""}>مسح بعد الإغلاق</label>
       <button class="btn" id="kwWNow">افحص الآن وأرسل</button>
-      <button class="btn ${w.whatsapp ? "primary" : ""}" id="kwWPhone">${w.whatsapp ? "✓ " : ""}📱 واتساب</button>
+      <button class="btn ${w.telegram || w.whatsapp ? "primary" : ""}" id="kwWPhone">${w.telegram ? "✓ 📱 تيليجرام" : w.whatsapp ? "✓ 📱 واتساب" : "📱 للجوال"}</button>
     </div>
-    <div class="hint-text">${w.on ? `يمسح السوق كل ${w.every} دقيقة من الأحد للخميس 9:00–12:45${w.afterClose ? " ومرة بعد الإغلاق" : ""}، ويرسل تنبيه لكل إشارة دخول جديدة (مرة وحدة لكل سهم في اليوم).` : "شغّله ليمسح السوق خلال الجلسة ويرسل لك تنبيه بأي إشارة دخول جديدة، حتى لو المتصفح مقفل."} السوق الحين ${w.sessionOpen ? '<b class="up">مفتوح</b>' : "مغلق"} · آخر مسح ${when}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}${w.whatsapp ? ` · 📱 الواتساب مفعّل على ${esc(w.waPhone)}` : ""}${w.lastWhatsApp && !w.lastWhatsApp.ok ? ` · <span class="down">آخر رسالة واتساب ما وصلت: ${esc(w.lastWhatsApp.note)}</span>` : ""}${w.webhook ? " · 🔗 رابط إرسال مفعّل" : ""}</div>
+    <div class="hint-text">${w.on ? `يمسح السوق كل ${w.every} دقيقة من الأحد للخميس 9:00–12:45${w.afterClose ? " ومرة بعد الإغلاق" : ""}، ويرسل تنبيه لكل إشارة دخول جديدة (مرة وحدة لكل سهم في اليوم).` : "شغّله ليمسح السوق خلال الجلسة ويرسل لك تنبيه بأي إشارة دخول جديدة، حتى لو المتصفح مقفل."} السوق الحين ${w.sessionOpen ? '<b class="up">مفتوح</b>' : "مغلق"} · آخر مسح ${when}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}${w.telegram ? ` · 📱 تيليجرام مفعّل (@${esc(w.tgBot)})` : ""}${w.lastTelegram && !w.lastTelegram.ok ? ` · <span class="down">آخر رسالة تيليجرام ما وصلت: ${esc(w.lastTelegram.note)}</span>` : ""}${w.whatsapp ? ` · 📱 الواتساب مفعّل على ${esc(w.waPhone)}` : ""}${w.lastWhatsApp && !w.lastWhatsApp.ok ? ` · <span class="down">آخر رسالة واتساب ما وصلت: ${esc(w.lastWhatsApp.note)}</span>` : ""}${w.webhook ? " · 🔗 رابط إرسال مفعّل" : ""}</div>
     <div id="kwWPhoneBox" hidden class="kw-phone-box">
+      <div class="kw-tg"><b>📱 تيليجرام</b>${w.telegram ? ` <span class="up">مربوط مع @${esc(w.tgBot)} ✓</span>` : ""}
+      <ol class="hint-text"><li>في تيليجرام افتح <b>@BotFather</b> ← اكتب <code dir="ltr">/newbot</code> ← اختر اسم للبوت ثم اسم مستخدم ينتهي بـ <code dir="ltr">bot</code>.</li>
+      <li>يرسل لك <b>رمز (token)</b> طويل، انسخه والصقه هنا واضغط «حفظ».</li>
+      <li>افتح البوت الجديد في تيليجرام واضغط <b>Start</b>، ثم ارجع هنا واضغط «ربط».</li></ol>
+      <div class="kw-phone"><label class="field">رمز البوت (token)<input id="kwTgToken" type="password" autocomplete="off" placeholder="${w.tgToken ? "محفوظ ••••" : "123456789:AA..."}" style="width:230px" dir="ltr"></label>
+      <button class="btn" id="kwTgSave">حفظ</button><button class="btn primary" id="kwTgLink" ${w.tgToken ? "" : "disabled"}>ربط</button><button class="btn" id="kwTgTest" ${w.telegram ? "" : "disabled"}>رسالة تجريبية</button>${w.tgToken ? '<button class="btn" id="kwTgOff">إلغاء</button>' : ""}</div>
+      <div class="hint-text">الرمز يبقى محفوظ على جهازك فقط ولا يظهر مرة ثانية، والرسائل تروح من جهازك لتيليجرام مباشرة.</div></div>
+      <details><summary class="hint-text">واتساب عبر CallMeBot</summary>
       <div class="hint-text"><b>تفعيل الواتساب (مرة وحدة):</b> 1) افتح موقع <b>callmebot.com</b> ← WhatsApp، وخذ رقم البوت وأضفه في جهات الاتصال. 2) أرسل له من جوالك: <code dir="ltr">I allow callmebot to send me messages</code> 3) يرد عليك برسالة فيها <b>apikey</b>. 4) اكتب رقمك والمفتاح هنا واضغط حفظ، ثم «رسالة تجريبية».</div>
       <div class="kw-phone"><label class="field">رقم الواتساب مع رمز الدولة<input id="kwWaPhone" placeholder="+96550000000" style="width:150px" dir="ltr"></label>
       <label class="field">المفتاح (apikey)<input id="kwWaKey" type="password" autocomplete="off" placeholder="${w.whatsapp ? "محفوظ ••••" : "من رسالة البوت"}" style="width:130px" dir="ltr"></label>
       <button class="btn primary" id="kwWaSave">حفظ</button><button class="btn" id="kwWaTest" ${w.whatsapp ? "" : "disabled"}>رسالة تجريبية</button>${w.whatsapp ? '<button class="btn" id="kwWaOff">إيقاف الواتساب</button>' : ""}</div>
       <div class="hint-text">الرسائل تمر عبر خدمة CallMeBot المجانية (طرف ثالث). المفتاح يبقى محفوظ على جهازك فقط ولا يظهر مرة ثانية.</div>
-      <details><summary class="hint-text">متقدم: رابط Telegram أو Discord أو Slack</summary><div class="kw-phone"><label class="field">رابط الإرسال<input id="kwWHook" value="${esc(w.webhook || "")}" placeholder="https://api.telegram.org/bot…/sendMessage?chat_id=…" style="width:320px" dir="ltr"></label><button class="btn" id="kwWHookSave">حفظ</button></div></details>
+      </details>
+      <details><summary class="hint-text">متقدم: رابط Discord أو Slack</summary><div class="kw-phone"><label class="field">رابط الإرسال<input id="kwWHook" value="${esc(w.webhook || "")}" placeholder="https://api.telegram.org/bot…/sendMessage?chat_id=…" style="width:320px" dir="ltr"></label><button class="btn" id="kwWHookSave">حفظ</button></div></details>
     </div>`;
     const post = async (patch) => {
       try {
@@ -272,6 +281,24 @@ export function renderKwScan(box, app) {
     };
     el.querySelector("#kwWaOff") &&
       (el.querySelector("#kwWaOff").onclick = () => post({ waPhone: "", waKey: "-" }));
+    const call = async (url, body, okMsg) => {
+      try {
+        await api.post(url, body);
+        if (okMsg) app.toast?.(okMsg);
+      } catch (e) {
+        app.toast?.(e.message);
+      }
+      await watchBox();
+      el.querySelector("#kwWPhoneBox").hidden = false;
+    };
+    el.querySelector("#kwTgSave").onclick = () => {
+      const t = el.querySelector("#kwTgToken").value.trim();
+      if (!t) return app.toast?.("الصق رمز البوت أولًا.");
+      call("/api/kwwatch", { tgToken: t }, "حُفظ الرمز. افتح البوت في تيليجرام واضغط Start، ثم اضغط «ربط».");
+    };
+    el.querySelector("#kwTgLink").onclick = () => call("/api/kwwatch/telegram-link", {}, "تم الربط ✓ شوف تيليجرام، وصلتك رسالة.");
+    el.querySelector("#kwTgTest").onclick = () => call("/api/kwwatch/telegram-test", {}, "أُرسلت رسالة تجريبية على تيليجرام ✓");
+    el.querySelector("#kwTgOff") && (el.querySelector("#kwTgOff").onclick = () => call("/api/kwwatch", { tgToken: "-" }, "أُلغي ربط تيليجرام."));
     el.querySelector("#kwWaTest").onclick = async (e) => {
       e.target.disabled = true;
       e.target.textContent = "جاري الإرسال…";

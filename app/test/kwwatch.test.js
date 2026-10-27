@@ -67,3 +67,12 @@ test("WhatsApp: the number needs its country code, the key is never sent back, a
   assert.equal(u.searchParams.get("apikey"), "abc");
   W.stop();
 });
+
+test("Telegram: the token is checked for shape, kept on the server, and cleared with '-'", () => {
+  assert.throws(() => W.update({ tgToken: "not-a-token" }), /رمز البوت/);
+  const s = W.update({ tgToken: "123456789:AAH4ZJ8kq_example_token_abcdefghijk" });
+  assert.equal(s.tgToken, true, "only whether one is saved");
+  assert.equal(s.telegram, false, "not linked until /start is found");
+  assert.equal(W.update({ tgToken: "-" }).tgToken, false);
+  W.stop();
+});

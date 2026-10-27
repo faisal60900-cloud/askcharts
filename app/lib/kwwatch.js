@@ -8,7 +8,7 @@ import * as alerts from "./alerts.js";
 import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
 import { scanRow } from "../public/lib/kuwait-scan.js";
 
-const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "" };
+const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "", tgToken: "", tgChat: "", tgBot: "" };
 let cfg = { ...DEFAULTS, ...store.read("kwwatch", {}) };
 let state = store.read("kwwatch-state", { sent: {}, lastRun: null, lastEntries: [], lastError: null });
 let timer = null,
@@ -32,9 +32,51 @@ const afterCloseWindow = (d = new Date()) => {
 // its middle hidden.
 const maskPhone = (p) => (p ? p.slice(0, 4) + "•••" + p.slice(-3) : "");
 export const settings = () => {
-  const { waKey, waPhone, ...rest } = cfg;
-  return { ...rest, whatsapp: !!(waKey && waPhone), waPhone: maskPhone(waPhone), sessionOpen: sessionOpen(), lastRun: state.lastRun, lastEntries: state.lastEntries, lastError: state.lastError, lastWhatsApp: state.lastWhatsApp || null };
+  const { waKey, waPhone, tgToken, tgChat, ...rest } = cfg;
+  return { ...rest, telegram: !!(tgToken && tgChat), tgToken: !!tgToken, tgBot: cfg.tgBot, lastTelegram: state.lastTelegram || null, whatsapp: !!(waKey && waPhone), waPhone: maskPhone(waPhone), sessionOpen: sessionOpen(), lastRun: state.lastRun, lastEntries: state.lastEntries, lastError: state.lastError, lastWhatsApp: state.lastWhatsApp || null };
 };
+
+// Telegram: your own bot (from @BotFather). The token stays on the server; the chat is found from
+// the /start message you send the bot, so nobody has to look up a chat id.
+const tg = async (method, body) => {
+  const res = await fetch(`https://api.telegram.org/bot${cfg.tgToken}/${method}`, {
+    method: body ? "POST" : "GET",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(15000),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!j.ok) throw Object.assign(new Error(j.description === "Unauthorized" ? "رمز البوت غير صحيح" : `تيليجرام: ${j.description || `HTTP ${res.status}`}`), { status: 400 });
+  return j.result;
+};
+export async function linkTelegram() {
+  if (!cfg.tgToken) throw Object.assign(new Error("الصق رمز البوت أولًا"), { status: 400 });
+  const me = await tg("getMe");
+  cfg.tgBot = me.username || "";
+  const ups = await tg("getUpdates");
+  const chat = [...ups].reverse().map((u) => u.message?.chat || u.my_chat_member?.chat).find((c) => c?.type === "private");
+  if (!chat) {
+    store.write("kwwatch", cfg);
+    throw Object.assign(new Error(`افتح البوت @${cfg.tgBot} في تيليجرام واضغط Start (أو أرسل له أي رسالة)، ثم اضغط «ربط» مرة ثانية.`), { status: 400 });
+  }
+  cfg.tgChat = String(chat.id);
+  store.write("kwwatch", cfg);
+  await sendTelegram(`✅ AskCharts مربوط. تنبيهات إشارات الدخول من ماسح السوق الكويتي راح توصلك هنا يا ${chat.first_name || ""}.`);
+  return settings();
+}
+export async function sendTelegram(text) {
+  if (!cfg.tgToken || !cfg.tgChat) throw Object.assign(new Error("اربط تيليجرام أولًا"), { status: 400 });
+  try {
+    await tg("sendMessage", { chat_id: cfg.tgChat, text, disable_web_page_preview: true });
+    state.lastTelegram = { at: new Date().toISOString(), ok: true, note: "" };
+  } catch (e) {
+    state.lastTelegram = { at: new Date().toISOString(), ok: false, note: e.message };
+    throw e;
+  } finally {
+    store.write("kwwatch-state", state);
+  }
+  return { ok: true };
+}
 
 // WhatsApp through CallMeBot (free, for messages to your own number): a GET with the number, the
 // text and the key the bot gave you.
@@ -70,6 +112,12 @@ export function update(patch = {}) {
     const ph = String(patch.waPhone || "").replace(/[\s-]/g, "");
     if (ph && !/^\+\d{8,15}$/.test(ph)) throw Object.assign(new Error("اكتب الرقم مع رمز الدولة، مثل +96550000000"), { status: 400 });
     next.waPhone = ph;
+  }
+  if ("tgToken" in patch && String(patch.tgToken || "").trim()) {
+    const t = String(patch.tgToken).trim();
+    if (t === "-") Object.assign(next, { tgToken: "", tgChat: "", tgBot: "" });
+    else if (!/^\d{5,12}:[A-Za-z0-9_-]{30,50}$/.test(t)) throw Object.assign(new Error("هذا مو شكل رمز البوت. انسخه كامل من رسالة @BotFather (أرقام ثم : ثم حروف)"), { status: 400 });
+    else Object.assign(next, { tgToken: t, tgChat: "", tgBot: "" });
   }
   // an empty key leaves the saved one as it is; "-" removes it
   if ("waKey" in patch && String(patch.waKey || "").trim()) next.waKey = patch.waKey === "-" ? "" : String(patch.waKey).trim().slice(0, 64);
@@ -130,6 +178,7 @@ export async function runOnce({ force = false } = {}) {
     for (const r of fresh) {
       const text = message(r);
       await alerts.notify({ symbol: r.symbol, name: "إشارة دخول فنية", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
+      if (cfg.tgToken && cfg.tgChat) await sendTelegram(`🔔 إشارة دخول فنية\n${text}`).catch(() => {});
       if (cfg.waPhone && cfg.waKey) await sendWhatsApp(`🔔 إشارة دخول فنية\n${text}`).catch(() => {});
     }
     // forget sent keys after four days
