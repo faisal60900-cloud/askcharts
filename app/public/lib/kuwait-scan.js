@@ -1,6 +1,6 @@
 // ماسح السوق الكويتي: one row per stock from its daily bars, read with the Market Reader, and the
 // filters the scan offers. Pure numbers in and out, so it can be tested without a page.
-import { readMarket } from "./market-reader.js";
+import { readMarket, kuwaitSessionFraction } from "./market-reader.js";
 
 // Average daily traded value over the last n sessions, in the stock's own money (Kuwaiti bars
 // are in fils, so / 1000 gives dinars).
@@ -27,7 +27,7 @@ export const ENTRY_RULES = ["breakout", "inflow", "buying", "signals"];
 export const isEntry = (row) => ENTRY_RULES.every((k) => FILTERS[k].test(row));
 
 // One stock: its reading on the daily bars, flattened into what the table and filters need.
-export function scanRow(stock, bars) {
+export function scanRow(stock, bars, now = Date.now()) {
   if (!bars || bars.length < 60) return { ...stock, error: "لا توجد بيانات كافية" };
   // A session that has only just opened has a candle with almost no volume, which would read as
   // "no liquidity" everywhere: read the last completed session instead, and say so.
@@ -35,7 +35,7 @@ export function scanRow(stock, bars) {
   const avg = vols.reduce((a, v) => a + v, 0) / Math.max(1, vols.length);
   const early = avg > 0 && (bars.at(-1).volume || 0) < avg * 0.1;
   if (early) bars = bars.slice(0, -1);
-  const r = readMarket({ "1D": bars }, { main: "1D", symbol: stock.symbol });
+  const r = readMarket({ "1D": bars }, { main: "1D", symbol: stock.symbol, sessionFraction: early ? 1 : kuwaitSessionFraction(bars.at(-1).time, now) });
   if (r.error) return { ...stock, error: r.error };
   const last = bars.at(-1),
     prev = bars.at(-2);

@@ -206,7 +206,9 @@ function schedule() {
     } catch (e) {
       state.lastError = e.message;
     }
-    timer = setTimeout(tick, (sessionOpen() ? cfg.every : 5) * 60e3);
+    // no data at all (just after a restart the network may not be up yet): try again in two minutes
+    const retry = sessionOpen() && state.lastError === "ما وصلت بيانات";
+    timer = setTimeout(tick, (retry ? 2 : sessionOpen() ? cfg.every : 5) * 60e3);
   };
   timer = setTimeout(tick, 5000);
 }

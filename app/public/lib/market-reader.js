@@ -233,7 +233,17 @@ const strengthAr = (touches) => (touches >= 4 ? "قوي جدًا" : touches >= 3
 
 // The whole reading. `byTf` maps a timeframe ("1D") to its bars; `main` is the timeframe for the
 // detail block (zones, volume, RSI, state).
-export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
+// How far through Boursa Kuwait's session (9:00-12:40 Kuwait, Sunday to Thursday) a daily bar
+// is, when that bar is today's: its volume so far is that share of a full day's. 1 otherwise.
+export function kuwaitSessionFraction(barTime, now = Date.now()) {
+  const k = new Date(now + 3 * 3600e3),
+    day = k.toISOString().slice(0, 10);
+  if (new Date(barTime * 1000 + 3 * 3600e3).toISOString().slice(0, 10) !== day) return 1;
+  const min = k.getUTCHours() * 60 + k.getUTCMinutes();
+  return Math.min(1, Math.max(0.05, (min - 9 * 60) / 220));
+}
+
+export function readMarket(byTf, { main = "1D", symbol = "", sessionFraction = 1 } = {}) {
   const frames = READER_TFS.map((f) => ({ ...f, r: readTimeframe(byTf[f.tf]) }));
   const mainBars = clean(byTf[main]);
   if (mainBars.length < 30) return { symbol, error: "لا توجد بيانات كافية لهذا الإطار." };
@@ -258,7 +268,9 @@ export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
   const atrPct = ok(atrNow) && price ? (atrNow / price) * 100 : null;
   const vols = mainBars.map((b) => b.volume || 0);
   const volAvg = vols.slice(-21, -1).reduce((s, v) => s + v, 0) / Math.max(1, Math.min(20, vols.length - 1));
-  const relVol = volAvg > 0 ? vols.at(-1) / volAvg : null;
+  // today's bar while the session is open: compare its volume with that share of a normal day
+  const frac = Math.min(1, Math.max(0.05, sessionFraction || 1));
+  const relVol = volAvg > 0 ? vols.at(-1) / (volAvg * frac) : null;
   const prevVol = volAvg > 0 && vols.length > 1 ? vols.at(-2) / volAvg : null;
   const squeeze = ok(atrNow) && ok(atrAvg) && atrNow < atrAvg * 0.8;
 
@@ -281,8 +293,19 @@ export function readMarket(byTf, { main = "1D", symbol = "" } = {}) {
   const brokeUp = lv.find((l) => price > l.hi && prior.some((b) => b.close <= l.hi) && l.touches >= 2);
   const brokeDown = lv.find((l) => price < l.lo && prior.some((b) => b.close >= l.lo) && l.touches >= 2);
 
-  // a breakout bar may still be forming: confirm with the stronger of it and the bar before
-  const confirmVol = Math.max(relVol ?? 0, prevVol ?? 0);
+  // A break is confirmed by the volume of the bar that made it (today's measured against the share
+  // of the session gone), not by a busy bar before it that didn't break anything.
+  const n = mainBars.length;
+  const relAt = (i) => (volAvg > 0 ? vols[i] / (volAvg * (i === n - 1 ? frac : 1)) : 0);
+  const breakVol = (l, up) => {
+    for (let i = n - 1; i >= Math.max(1, n - 3); i--) {
+      const c = mainBars[i].close,
+        pc = mainBars[i - 1].close;
+      if (up ? c > l.hi && pc <= l.hi : c < l.lo && pc >= l.lo) return relAt(i);
+    }
+    return relVol ?? 0;
+  };
+  const confirmVol = brokeUp ? breakVol(brokeUp, true) : brokeDown ? breakVol(brokeDown, false) : relVol ?? 0;
   // state, first match wins
   let state, stateKey;
   if (brokeUp && confirmVol >= 1.3) [stateKey, state] = ["breakout", `اختراق ${rp(brokeUp.price)} بسيولة`];

@@ -66,3 +66,26 @@ test("a session that has only just opened is read on the last completed session"
   assert.equal(r.early, true);
   assert.ok(r.relVol > 0.5, `${r.relVol}`);
 });
+
+import { kuwaitSessionFraction } from "../public/lib/market-reader.js";
+
+test("session fraction: today's bar an hour into the session is about a quarter of a day", () => {
+  const now = Date.UTC(2026, 9, 27, 7, 9); // 10:09 Kuwait
+  const today = Date.UTC(2026, 9, 27, 6) / 1000,
+    yesterday = Date.UTC(2026, 9, 26, 6) / 1000;
+  const f = kuwaitSessionFraction(today, now);
+  assert.ok(f > 0.25 && f < 0.35, `${f}`);
+  assert.equal(kuwaitSessionFraction(yesterday, now), 1);
+});
+
+test("a break on a thin bar isn't confirmed by a busy bar before it", () => {
+  // the busy day closes under the 825 tops; the break comes the next day on light volume
+  const bars = range(200);
+  const t = bars.at(-1).time;
+  bars.push({ time: t + 86400, open: 812, high: 824, low: 810, close: 823, volume: 400000 });
+  bars.push({ time: t + 2 * 86400, open: 823, high: 846, low: 822, close: 845, volume: 60000 });
+  const r = scanRow(stock, bars);
+  assert.equal(r.breakout?.dir, "up", JSON.stringify(r.breakout));
+  assert.equal(r.breakout.confirmed, false, "0.6x on the breaking bar");
+  assert.equal(r.entry, false);
+});

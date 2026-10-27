@@ -4,7 +4,7 @@
 // While the panel is open it refreshes every minute and when the symbol or interval changes.
 import { api } from "./api.js";
 import { AgentTools } from "./agent.js";
-import { readMarket, READER_TFS } from "../lib/market-reader.js";
+import { readMarket, READER_TFS, kuwaitSessionFraction } from "../lib/market-reader.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const num = (v) => (v == null ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: Math.abs(v) < 1 ? 6 : Math.abs(v) < 100 ? 3 : 2 }));
@@ -33,7 +33,10 @@ export async function loadReading(sym, main = "1D") {
   READER_TFS.forEach((f, i) => {
     if (results[i].status === "fulfilled" && results[i].value.length) byTf[f.tf] = results[i].value;
   });
-  return readMarket(byTf, { main, symbol: sym });
+  // Kuwaiti stocks: today's daily volume is measured against the share of the session gone
+  const last = byTf[main]?.at(-1);
+  const sessionFraction = /\.KW$/.test(sym) && main === "1D" && last ? kuwaitSessionFraction(last.time) : 1;
+  return readMarket(byTf, { main, symbol: sym, sessionFraction });
 }
 
 const trendCls = (k) => (k == null ? "mr-na" : k > 0 ? (k > 1 ? "mr-up2" : "mr-up") : k < 0 ? (k < -1 ? "mr-dn2" : "mr-dn") : "mr-flat");
