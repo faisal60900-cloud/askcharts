@@ -134,11 +134,11 @@ export function entryMessage(r, { market = null, note = null, reach = reachOf() 
   const tR = (m) => (R ? entry + R * m : null);
   const away = p ? ((r.price - p.entryZone.to) / p.entryZone.to) * 100 : null;
   return [
-    `🇺🇸 إشارة دخول فنية — ${r.code} (${r.en})`,
+    `🟢🇺🇸 إشارة شراء — ${r.code} (${r.en})`,
     `السعر الآن: ${usd(r.price)} (${pct(r.changePct)} اليوم)`,
     `📈 الاختراق: ${usd(r.breakout?.level)} ✓ بسيولة ${n2(r.breakout?.vol, 1)}x · سيولة داخلة ${r.flow?.inflowPct}% · الشراء ${r.buyToday}%`,
-    p ? `🎯 منطقة الدخول: ${usd(p.entryZone.from)} – ${usd(p.entryZone.to)}` : "",
-    away != null && away > 3 ? `⚠️ السعر الآن فوق منطقة الدخول بـ ${n2(away, 1)}%${R && r.price >= tR(1) ? ` وتجاوز الهدف ${US_TARGETS_R.filter((m) => r.price >= tR(m)).length}` : ""}: الدخول من هنا مخاطرته أعلى لأن الوقف صار أبعد، والانتظار لرجوع السعر للمنطقة أحوط.` : away != null && away > 0 ? `السعر قريب من منطقة الدخول (فوقها بـ ${n2(away, 1)}%).` : p ? "✅ السعر داخل منطقة الدخول الآن." : "",
+    p ? `🎯 الشراء من منطقة: ${usd(p.entryZone.from)} – ${usd(p.entryZone.to)}` : "",
+    away != null && away > 3 ? `⚠️ السعر الآن فوق منطقة الشراء بـ ${n2(away, 1)}%${R && r.price >= tR(1) ? ` وتجاوز الهدف ${US_TARGETS_R.filter((m) => r.price >= tR(m)).length}` : ""}: الشراء من هنا مخاطرته أعلى لأن الوقف صار أبعد، والأحسن تنتظر رجوع السعر للمنطقة.` : away != null && away > 0 ? `السعر قريب من منطقة الشراء (فوقها بـ ${n2(away, 1)}%).` : p ? "✅ السعر داخل منطقة الشراء الآن." : "",
     p ? `🛑 وقف الخسارة الأولي: ${usd(p.stop)} (${pct(-((entry - p.stop) / entry) * 100)} من الدخول)` : "",
     R ? `🎯 الأهداف الخمسة (ونسبة وصول السعر لها تاريخيًا قبل الوقف):\n${US_TARGETS_R.map((m, k) => `${["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"][k]} ${usd(tR(m))} (${pct((m * R * 100) / entry)})${reach?.[m] != null ? ` — ${reach[m]}%` : ""}`).join("\n")}` : "",
     R ? "📋 إدارة الصفقة: بيع 20% عند كل هدف · بعد الهدف الأول ارفع الوقف لسعر الدخول · وبعد كل هدف ارفعه للهدف اللي قبله." : "",
@@ -146,7 +146,7 @@ export function entryMessage(r, { market = null, note = null, reach = reachOf() 
     market?.spy ? (market.spy.up ? "✅ السوق العام صاعد (S&P 500 فوق متوسط 50)" : "⚠️ السوق العام تحت متوسط 50: الإشارات تاريخيًا أضعف في هالحالة") : "",
     note ? `🧠 قراءة المحلل:\n${note}` : "",
     track(),
-    "فلترة فنية بقواعد ثابتة، وليست توصية. القرار وحجم المخاطرة عليك.",
+    "إشارة من قواعد ثابتة نجحت تاريخيًا بالنسبة المذكورة فوق، ولا تضمن الربح. لا تخاطر بأكثر من 1-2% من محفظتك في الصفقة.",
   ]
     .filter(Boolean)
     .join("\n");

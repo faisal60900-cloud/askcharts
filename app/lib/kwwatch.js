@@ -152,11 +152,11 @@ export function message(r) {
     `${r.code}${r.ar ? ` (${r.ar})` : ` (${r.en})`} — السعر ${num(r.price)}`,
     `اختراق ${num(r.breakout?.level)} ✓ بسيولة ${num(r.breakout?.vol ?? r.relVol)}x · سيولة داخلة ${r.flow?.inflowPct}% · شراء ${r.buyToday}%`,
     `الاتجاه الأسبوعي صاعد · RSI ${num(r.rsi)} · إغلاق قرب القمة · الإشارات ${r.positives}✓ ${r.negatives}✗`,
-    p ? `دخول ${num(p.entryZone.from)}–${num(p.entryZone.to)} · وقف أولي ${num(p.stop)}` : "",
+    p ? `الشراء من ${num(p.entryZone.from)}–${num(p.entryZone.to)} · وقف أولي ${num(p.stop)}` : "",
     r.trail ? `وقف متحرك: أعلى سعر بعد الدخول ناقص ${num(r.trail.dist)} (2.5 ATR)` : "",
     tg.length ? `مقاومات قريبة: ${tg.map((t) => num(t.price)).join("، ")}` : "",
     track(),
-    "فلترة فنية بقواعد ثابتة، وليست توصية.",
+    "إشارة من قواعد ثابتة، ولا تضمن الربح. لا تخاطر بأكثر من 1-2% من محفظتك في الصفقة.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -192,9 +192,9 @@ export async function runOnce({ force = false } = {}) {
     }
     for (const r of fresh) {
       const text = message(r);
-      await alerts.notify({ symbol: r.symbol, name: "إشارة دخول فنية", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
-      if (cfg.tgToken && cfg.tgChat) await sendTelegram(`🔔 إشارة دخول فنية\n${text}`).catch(() => {});
-      if (cfg.waPhone && cfg.waKey) await sendWhatsApp(`🔔 إشارة دخول فنية\n${text}`).catch(() => {});
+      await alerts.notify({ symbol: r.symbol, name: "إشارة شراء", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
+      if (cfg.tgToken && cfg.tgChat) await sendTelegram(`🟢🇰🇼 إشارة شراء\n${text}`).catch(() => {});
+      if (cfg.waPhone && cfg.waKey) await sendWhatsApp(`🟢🇰🇼 إشارة شراء\n${text}`).catch(() => {});
       follow(r);
     }
     // forget sent keys after four days

@@ -35,7 +35,7 @@ test("the entry message has the breakout, entry zone, stop, trailing stop, targe
     plan: { entryZone: { from: 177.6, to: 179 }, stop: 172.3, targets: [{ price: 190 }] }, trail: { atr: 3, dist: 12.4 },
   };
   const t = U.entryMessage(r, { market: { spy: { up: false } }, note: "قراءة تجريبية", reach: { 1: 54, 2: 38, 3: 29, 4: 22, 5: 15 } });
-  for (const part of ["NVDA", "178.2$", "2.6x", "177.6$", "172.3$", "الأهداف الخمسة", "190$", "تحت متوسط 50", "قراءة تجريبية", "بيع 20%", "لسعر الدخول", "وليست توصية"]) assert.ok(t.includes(part), part);
+  for (const part of ["NVDA", "178.2$", "2.6x", "177.6$", "172.3$", "الأهداف الخمسة", "190$", "تحت متوسط 50", "قراءة تجريبية", "بيع 20%", "لسعر الدخول", "إشارة شراء"]) assert.ok(t.includes(part), part);
   // five targets at 1R..5R from the middle of the entry zone (178.3, risk 6), each with its reach
   for (const [px, hit] of [["184.3$", "54%"], ["190.3$", "38%"], ["196.3$", "29%"], ["202.3$", "22%"], ["208.3$", "15%"]]) assert.ok(t.includes(px) && t.includes(hit), px);
 });
@@ -50,8 +50,8 @@ test("settings are clamped", () => {
 
 test("a price that ran past the entry zone is flagged, and one inside it is said so", () => {
   const base = { code: "LMT", en: "Lockheed", changePct: 5, breakout: { level: 594.2, vol: 2.3 }, flow: { inflowPct: 72 }, buyToday: 95, plan: { entryZone: { from: 589, to: 599.4 }, stop: 576.9, targets: [] }, trail: { atr: 3, dist: 52 } };
-  assert.match(U.entryMessage({ ...base, price: 635.2 }), /فوق منطقة الدخول بـ 6%.*وتجاوز الهدف 2/);
-  assert.match(U.entryMessage({ ...base, price: 595 }), /داخل منطقة الدخول/);
+  assert.match(U.entryMessage({ ...base, price: 635.2 }), /فوق منطقة الشراء بـ 6%.*وتجاوز الهدف 2/);
+  assert.match(U.entryMessage({ ...base, price: 595 }), /داخل منطقة الشراء/);
 });
 
 import { usVolumeShare } from "../public/lib/market-reader.js";
