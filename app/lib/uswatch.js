@@ -61,7 +61,7 @@ export function update(patch = {}) {
 async function send(text, { symbol = "", name = "السوق الأمريكي" } = {}) {
   const t = text.length > 3900 ? text.slice(0, 3890) + "…" : text;
   await alerts.notify({ symbol, name, text: t, notify: { toast: true, sound: true, desktop: true } });
-  if (kwwatch.settings().telegram) await kwwatch.sendTelegram(t).catch((e) => (state.lastError = `تيليجرام: ${e.message}`));
+  if (kwwatch.settings().telegram) await kwwatch.sendTelegram(t, "us").catch((e) => (state.lastError = `تيليجرام: ${e.message}`));
 }
 const ai = (prompt, maxTokens) => (cfg.ai ? write(ANALYST, prompt, { maxTokens }) : Promise.resolve(null));
 

@@ -34,7 +34,7 @@ const afterCloseWindow = (d = new Date()) => {
 const maskPhone = (p) => (p ? p.slice(0, 4) + "•••" + p.slice(-3) : "");
 export const settings = () => {
   const { waKey, waPhone, tgToken, tgChat, ...rest } = cfg;
-  return { ...rest, telegram: !!(tgToken && tgChat), tgToken: !!tgToken, tgBot: cfg.tgBot, lastTelegram: state.lastTelegram || null, whatsapp: !!(waKey && waPhone), waPhone: maskPhone(waPhone), sessionOpen: sessionOpen(), lastRun: state.lastRun, lastEntries: state.lastEntries, lastError: state.lastError, lastWhatsApp: state.lastWhatsApp || null };
+  return { ...rest, tgChats: Object.fromEntries(Object.keys(cfg.tgChats || {}).map((k) => [k, true])), telegram: !!(tgToken && tgChat), tgToken: !!tgToken, tgBot: cfg.tgBot, lastTelegram: state.lastTelegram || null, whatsapp: !!(waKey && waPhone), waPhone: maskPhone(waPhone), sessionOpen: sessionOpen(), lastRun: state.lastRun, lastEntries: state.lastEntries, lastError: state.lastError, lastWhatsApp: state.lastWhatsApp || null };
 };
 
 // Telegram: your own bot (from @BotFather). The token stays on the server; the chat is found from
@@ -65,10 +65,58 @@ export async function linkTelegram() {
   await sendTelegram(`✅ AskCharts مربوط. تنبيهات إشارات الدخول من ماسح السوق الكويتي راح توصلك هنا يا ${chat.first_name || ""}.`);
   return settings();
 }
-export async function sendTelegram(text) {
+// One Telegram group per market, if you want: add the bot to a group and send it the market's
+// command there (/kw@yourbot, /us@yourbot, /sa@yourbot or /ae@yourbot; /off@yourbot sends that
+// group's market back to the private chat). A market without its own group goes to the private chat.
+export const MARKET_NAMES = { kw: "🇰🇼 السوق الكويتي", us: "🇺🇸 السوق الأمريكي", sa: "🇸🇦 السوق السعودي", ae: "🇦🇪 سوق دبي" };
+export function routeCommand(text, bot = "") {
+  const m = String(text || "").trim().match(/^\/(kw|us|sa|ae|off)(?:@(\w+))?\s*$/i);
+  if (!m) return null;
+  if (m[2] && bot && m[2].toLowerCase() !== bot.toLowerCase()) return null;
+  return m[1].toLowerCase();
+}
+export const chatFor = (market) => (market && cfg.tgChats?.[market]) || cfg.tgChat;
+let tgPolling = false;
+export async function pollTelegram() {
+  if (!cfg.tgToken || tgPolling) return { changed: 0 };
+  tgPolling = true;
+  let changed = 0;
+  try {
+    const ups = await tg("getUpdates", { offset: (state.tgOffset || 0) + 1, timeout: 0, allowed_updates: ["message", "channel_post"] });
+    for (const u of ups) {
+      state.tgOffset = Math.max(state.tgOffset || 0, u.update_id);
+      const msg = u.message || u.channel_post;
+      const cmd = routeCommand(msg?.text, cfg.tgBot);
+      if (!cmd || !msg.chat) continue;
+      const chat = String(msg.chat.id);
+      cfg.tgChats = { ...(cfg.tgChats || {}) };
+      if (cmd === "off") {
+        const gone = Object.keys(cfg.tgChats).filter((k) => cfg.tgChats[k] === chat);
+        for (const k of gone) delete cfg.tgChats[k];
+        await tg("sendMessage", { chat_id: chat, text: gone.length ? `تم. ${gone.map((k) => MARKET_NAMES[k]).join("، ")} رجع يوصل على الخاص.` : "هالمجموعة ما فيها سوق مربوط." }).catch(() => {});
+      } else {
+        cfg.tgChats[cmd] = chat;
+        await tg("sendMessage", { chat_id: chat, text: `✅ تم. توصيات ومتابعة ${MARKET_NAMES[cmd]} صارت توصل هنا.` }).catch(() => {});
+      }
+      changed++;
+      store.write("kwwatch", cfg);
+    }
+    store.write("kwwatch-state", state);
+  } finally {
+    tgPolling = false;
+  }
+  return { changed };
+}
+export async function sendTelegram(text, market = null) {
   if (!cfg.tgToken || !cfg.tgChat) throw Object.assign(new Error("اربط تيليجرام أولًا"), { status: 400 });
   try {
-    await tg("sendMessage", { chat_id: cfg.tgChat, text, disable_web_page_preview: true });
+    try {
+      await tg("sendMessage", { chat_id: chatFor(market), text, disable_web_page_preview: true });
+    } catch (e) {
+      // a group the bot was removed from: fall back to the private chat
+      if (chatFor(market) === cfg.tgChat) throw e;
+      await tg("sendMessage", { chat_id: cfg.tgChat, text, disable_web_page_preview: true });
+    }
     state.lastTelegram = { at: new Date().toISOString(), ok: true, note: "" };
   } catch (e) {
     state.lastTelegram = { at: new Date().toISOString(), ok: false, note: e.message };
@@ -116,9 +164,9 @@ export function update(patch = {}) {
   }
   if ("tgToken" in patch && String(patch.tgToken || "").trim()) {
     const t = String(patch.tgToken).trim();
-    if (t === "-") Object.assign(next, { tgToken: "", tgChat: "", tgBot: "" });
+    if (t === "-") Object.assign(next, { tgToken: "", tgChat: "", tgBot: "", tgChats: {} });
     else if (!/^\d{5,12}:[A-Za-z0-9_-]{30,50}$/.test(t)) throw Object.assign(new Error("هذا مو شكل رمز البوت. انسخه كامل من رسالة @BotFather (أرقام ثم : ثم حروف)"), { status: 400 });
-    else Object.assign(next, { tgToken: t, tgChat: "", tgBot: "" });
+    else Object.assign(next, { tgToken: t, tgChat: "", tgBot: "", tgChats: {} });
   }
   // an empty key leaves the saved one as it is; "-" removes it
   if ("waKey" in patch && String(patch.waKey || "").trim()) next.waKey = patch.waKey === "-" ? "" : String(patch.waKey).trim().slice(0, 64);
@@ -193,7 +241,7 @@ export async function runOnce({ force = false } = {}) {
     for (const r of fresh) {
       const text = message(r);
       await alerts.notify({ symbol: r.symbol, name: "إشارة شراء", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
-      if (cfg.tgToken && cfg.tgChat) await sendTelegram(`🟢🇰🇼 إشارة شراء\n${text}`).catch(() => {});
+      if (cfg.tgToken && cfg.tgChat) await sendTelegram(`🟢🇰🇼 إشارة شراء\n${text}`, "kw").catch(() => {});
       if (cfg.waPhone && cfg.waKey) await sendWhatsApp(`🟢🇰🇼 إشارة شراء\n${text}`).catch(() => {});
       follow(r);
     }
@@ -219,7 +267,7 @@ export function follow(r) {
 }
 async function deliver(text) {
   await alerts.notify({ symbol: "", name: "متابعة صفقة", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
-  if (cfg.tgToken && cfg.tgChat) await sendTelegram(text).catch(() => {});
+  if (cfg.tgToken && cfg.tgChat) await sendTelegram(text, "kw").catch(() => {});
   if (cfg.waPhone && cfg.waKey) await sendWhatsApp(text).catch(() => {});
 }
 export const checkTrades = () => trades.check("kw", (t) => getCandles(t.symbol, "1D", 3).then((r) => trades.fromBar(t, (r.candles || []).at(-1))), deliver);
@@ -256,8 +304,16 @@ function schedule() {
   followTrades();
 }
 
-export const start = () => schedule();
+// the group commands, read once a minute
+let tgTimer = null;
+export const start = () => {
+  schedule();
+  clearInterval(tgTimer);
+  tgTimer = setInterval(() => pollTelegram().catch(() => {}), 60e3);
+  tgTimer.unref?.();
+};
 export const stop = () => {
   clearTimeout(timer);
   clearInterval(tradesTimer);
+  clearInterval(tgTimer);
 };

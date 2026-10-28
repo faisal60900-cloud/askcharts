@@ -77,3 +77,13 @@ test("Telegram: the token is checked for shape, kept on the server, and cleared 
   assert.equal(W.update({ tgToken: "-" }).tgToken, false);
   W.stop();
 });
+
+test("the group commands that pick a market's Telegram chat", () => {
+  assert.equal(W.routeCommand("/kw@Faisalkhbot", "Faisalkhbot"), "kw");
+  assert.equal(W.routeCommand("/US", "Faisalkhbot"), "us");
+  assert.equal(W.routeCommand(" /ae@faisalkhbot ", "Faisalkhbot"), "ae");
+  assert.equal(W.routeCommand("/off@Faisalkhbot", "Faisalkhbot"), "off");
+  assert.equal(W.routeCommand("/kw@OtherBot", "Faisalkhbot"), null, "another bot's command");
+  assert.equal(W.routeCommand("kw", "Faisalkhbot"), null);
+  assert.equal(W.routeCommand("/kwx", "Faisalkhbot"), null);
+});
