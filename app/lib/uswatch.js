@@ -70,7 +70,8 @@ export function update(patch = {}) {
 async function send(text, { symbol = "", name = "السوق الأمريكي" } = {}) {
   const t = text.length > 3900 ? text.slice(0, 3890) + "…" : text;
   await alerts.notify({ symbol, name, text: t, notify: { toast: true, sound: true, desktop: true } });
-  if (kwwatch.settings().telegram) await kwwatch.sendTelegram(t, "us").catch((e) => (state.lastError = `تيليجرام: ${e.message}`));
+  if (kwwatch.settings().telegram) return kwwatch.sendTelegram(t, "us").catch((e) => ((state.lastError = `تيليجرام: ${e.message}`), null));
+  return null;
 }
 const ai = (prompt, maxTokens) => (cfg.ai ? write(ANALYST, prompt, { maxTokens }) : Promise.resolve(null));
 
@@ -162,11 +163,12 @@ export function entryMessage(r, { market = null, note = null, reach = reachOf() 
     .join("\n");
 }
 
-export async function runOnce({ force = false } = {}) {
+// list: a quick look at a few stocks (the ones near a breakout), between the full scans
+export async function runOnce({ force = false, list: only = null } = {}) {
   if (busy) return { busy: true };
   busy = true;
   try {
-    const list = await universe(cfg.size);
+    const list = only || (await universe(cfg.size));
     const rows = [];
     let i = 0,
       limited = false;
@@ -195,6 +197,14 @@ export async function runOnce({ force = false } = {}) {
     for (const r of fresh) state.sent[`${r.code}|${date}`] = Date.now();
     (state.chased ||= {})[date] = [...new Set([...(state.chased[date] || []), ...unsent.filter((r) => !fresh.includes(r)).map((r) => r.code)])];
     for (const d of Object.keys(state.chased)) if (d < date) delete state.chased[d];
+    // Speed first: each signal goes out at once, then its message is completed in place with the
+    // market's state, the buying and selling and the analyst's note.
+    const sentMsgs = [];
+    for (const r of fresh) {
+      sentMsgs.push(await send(entryMessage(r, {}) + "\n⏳ قراءة المحلل والصفقات الداخلة والخارجة جاية خلال ثواني…", { symbol: r.symbol, name: "" }));
+      state.watched[r.code] = { symbol: r.symbol, en: r.en, since: Date.now(), close: r.price, level: r.breakout?.level ?? null, stop: r.plan?.stop ?? null };
+      follow(r);
+    }
     const market = fresh.length ? await snapshot().catch(() => null) : null;
     // the analyst's notes all at once, so the last signal isn't kept waiting for the others'
     const notes = await Promise.all(
@@ -206,12 +216,16 @@ export async function runOnce({ force = false } = {}) {
         ).catch(() => null);
       }),
     );
+    const flows = await Promise.all(fresh.map((r) => flowFor(r.symbol, "us").catch(() => "")));
     for (const [k, r] of fresh.entries()) {
-      const note = notes[k];
-      const flow = await flowFor(r.symbol, "us").catch(() => "");
-      await send(addFlow(entryMessage(r, { market, note }), flow), { symbol: r.symbol, name: "" });
-      state.watched[r.code] = { symbol: r.symbol, en: r.en, since: Date.now(), close: r.price, level: r.breakout?.level ?? null, stop: r.plan?.stop ?? null };
-      follow(r);
+      const full = addFlow(entryMessage(r, { market, note: notes[k] }), flows[k]);
+      const done = await kwwatch.editTelegram(sentMsgs[k], full).catch(() => false);
+      // no message to complete (Telegram off or the edit refused): send the full one
+      if (!done && kwwatch.settings().telegram) await send(full, { symbol: r.symbol, name: "" });
+    }
+    if (only) {
+      saveState();
+      return { scanned: ok.length, entries: entries.length, sent: fresh.length, quick: true };
     }
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 5 * 86400e3) delete state.sent[k];
     state.lastRun = new Date().toISOString();
@@ -238,6 +252,11 @@ export async function runOnce({ force = false } = {}) {
   } finally {
     busy = false;
   }
+}
+// the quick list: near or through a breakout at the last scan, and today's get-ready alerts
+export function hotList() {
+  const codes = new Set([...(state.radar || []).map((r) => r.code), ...Object.keys(state.pre || {}).filter((k) => k.endsWith(`|${ny().date}`)).map((k) => k.split("|")[0])]);
+  return [...codes].slice(0, 40).map((code) => ({ code, symbol: `US:${code}`, en: state.radar?.find((r) => r.code === code)?.en || code, ar: null }));
 }
 // Follow a signal's five targets and its stop from now on (lib/trades.js), with the same entry,
 // stop and targets the message gave.
@@ -404,6 +423,11 @@ async function tick() {
       await checkTrades();
     }
     if (mk.open && Date.now() - state.lastScanAt >= (d.fast ? 5 : cfg.every) * 60e3) await runOnce();
+    // between full scans, every minute: the stocks closest to a breakout, so a break is caught fast
+    else if (mk.open && state.radar?.length && Date.now() - (state.lastQuickAt || 0) >= 60e3) {
+      state.lastQuickAt = Date.now();
+      await runOnce({ list: hotList() });
+    }
     if (cfg.briefs && !cfg.light && d.open && state.lastScanAt > Date.now() - 20 * 60e3) await brief("open");
     if (cfg.briefs && d.close) {
       await runOnce();

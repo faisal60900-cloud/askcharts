@@ -131,13 +131,14 @@ export async function pollTelegram({ wait = 0 } = {}) {
 }
 export async function sendTelegram(text, market = null) {
   if (!cfg.tgToken || !cfg.tgChat) throw Object.assign(new Error("اربط تيليجرام أولًا"), { status: 400 });
+  let msg = null;
   try {
     try {
-      await tg("sendMessage", { chat_id: chatFor(market), text, disable_web_page_preview: true });
+      msg = await tg("sendMessage", { chat_id: chatFor(market), text, disable_web_page_preview: true });
     } catch (e) {
       // a group the bot was removed from: fall back to the private chat
       if (chatFor(market) === cfg.tgChat) throw e;
-      await tg("sendMessage", { chat_id: cfg.tgChat, text, disable_web_page_preview: true });
+      msg = await tg("sendMessage", { chat_id: cfg.tgChat, text, disable_web_page_preview: true });
     }
     state.lastTelegram = { at: new Date().toISOString(), ok: true, note: "" };
   } catch (e) {
@@ -146,7 +147,13 @@ export async function sendTelegram(text, market = null) {
   } finally {
     store.write("kwwatch-state", state);
   }
-  return { ok: true };
+  return { ok: true, chat: msg?.chat?.id, id: msg?.message_id };
+}
+// Replace a message already sent (a signal sent at once, then completed with the analyst's note).
+export async function editTelegram(sent, text) {
+  if (!cfg.tgToken || !sent?.chat || !sent?.id) return false;
+  await tg("editMessageText", { chat_id: sent.chat, message_id: sent.id, text: text.slice(0, 4000), disable_web_page_preview: true });
+  return true;
 }
 
 // WhatsApp through CallMeBot (free, for messages to your own number): a GET with the number, the

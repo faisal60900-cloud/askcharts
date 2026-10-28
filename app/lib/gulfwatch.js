@@ -87,7 +87,8 @@ function update(patch = {}) {
 async function send(text, symbol = "") {
   const t = text.length > 3900 ? text.slice(0, 3890) + "…" : text;
   await alerts.notify({ symbol, name: "", text: t, notify: { toast: true, sound: true, desktop: true } });
-  if (kwwatch.settings().telegram) await kwwatch.sendTelegram(t, M.market).catch((e) => (state.lastError = `تيليجرام: ${e.message}`));
+  if (kwwatch.settings().telegram) return kwwatch.sendTelegram(t, M.market).catch((e) => ((state.lastError = `تيليجرام: ${e.message}`), null));
+  return null;
 }
 const ai = (prompt, maxTokens) => (cfg.ai ? write(ANALYST, prompt, { maxTokens }) : Promise.resolve(null));
 
@@ -200,15 +201,17 @@ async function runOnce({ force = false } = {}) {
     const date = clock().date;
     // late ones (more than 3% over the buy zone, or up more than 5% today) aren't sent
     const fresh = entries.filter((r) => force || (!state.sent[`${r.code}|${date}`] && !late(r)));
+    // at once, then completed in place with the buying and selling and the analyst's note
     for (const r of fresh) {
       state.sent[`${r.code}|${date}`] = Date.now();
-      const note = await ai(
-        `حلل إشارة الشراء هذي في سهم من ${M.title} في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع ${M.title} العام، أي المقاومات تبدو واقعية، المخاطر (المسافة للوقف)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}`,
-        2500,
-      );
-      const flow = await flowFor(r.symbol, M.market).catch(() => "");
-      await send(addFlow(entryMessage(r, { market, note }), flow), r.symbol);
+      const first = await send(entryMessage(r, { market }) + "\n⏳ قراءة المحلل والصفقات الداخلة والخارجة جاية خلال ثواني…", r.symbol);
       follow(r);
+      const [note, flow] = await Promise.all([
+        ai(`حلل إشارة الشراء هذي في سهم من ${M.title} في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع ${M.title} العام، أي المقاومات تبدو واقعية، المخاطر (المسافة للوقف)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}`, 2500).catch(() => null),
+        flowFor(r.symbol, M.market).catch(() => ""),
+      ]);
+      const full = addFlow(entryMessage(r, { market, note }), flow);
+      if (!(await kwwatch.editTelegram(first, full).catch(() => false)) && kwwatch.settings().telegram) await send(full, r.symbol);
     }
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 5 * 86400e3) delete state.sent[k];
     state.lastRun = new Date().toISOString();
