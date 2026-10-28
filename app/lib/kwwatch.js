@@ -8,6 +8,7 @@ import * as alerts from "./alerts.js";
 import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
 import { scanRow } from "../public/lib/kuwait-scan.js";
 import * as trades from "./trades.js";
+import { flowFor } from "./flow.js";
 
 const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "", tgToken: "", tgChat: "", tgBot: "" };
 let cfg = { ...DEFAULTS, ...store.read("kwwatch", {}) };
@@ -253,7 +254,8 @@ export async function runOnce({ force = false } = {}) {
       fresh.push(r);
     }
     for (const r of fresh) {
-      const text = message(r);
+      const flow = await flowFor(r.symbol, "kw").catch(() => "");
+      const text = message(r) + (flow ? `\n${flow}` : "");
       await alerts.notify({ symbol: r.symbol, name: "إشارة شراء", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
       if (cfg.tgToken && cfg.tgChat) await sendTelegram(`🟢🇰🇼 إشارة شراء\n${text}`, "kw").catch(() => {});
       if (cfg.waPhone && cfg.waKey) await sendWhatsApp(`🟢🇰🇼 إشارة شراء\n${text}`).catch(() => {});

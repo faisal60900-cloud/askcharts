@@ -99,3 +99,9 @@ test("a signal the price already ran 3% past the buy zone is a chase, not sent",
   assert.equal(U.chased({ price: 105.2, plan }), true);
   assert.equal(U.chased({ price: 105.2, plan: null }), false);
 });
+
+test("the buying and selling lines go before the analyst's note", () => {
+  assert.equal(U.addFlow("a\nb\n🧠 note\n📊 record", "FLOW"), "a\nb\nFLOW\n🧠 note\n📊 record");
+  assert.equal(U.addFlow("a\nb", "FLOW"), "a\nb\nFLOW");
+  assert.equal(U.addFlow("a", ""), "a");
+});

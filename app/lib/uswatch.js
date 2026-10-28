@@ -13,6 +13,7 @@ import * as aiw from "./ai-write.js";
 import { scanRow, US_TARGETS_R } from "../public/lib/kuwait-scan.js";
 import { ema } from "../public/lib/indicators.js";
 import * as trades from "./trades.js";
+import { flowFor } from "./flow.js";
 
 // light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
 const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true };
@@ -197,7 +198,8 @@ export async function runOnce({ force = false } = {}) {
     );
     for (const [k, r] of fresh.entries()) {
       const note = notes[k];
-      await send(entryMessage(r, { market, note }), { symbol: r.symbol, name: "" });
+      const flow = await flowFor(r.symbol, "us").catch(() => "");
+      await send(addFlow(entryMessage(r, { market, note }), flow), { symbol: r.symbol, name: "" });
       state.watched[r.code] = { symbol: r.symbol, en: r.en, since: Date.now(), close: r.price, level: r.breakout?.level ?? null, stop: r.plan?.stop ?? null };
       follow(r);
     }
@@ -239,6 +241,15 @@ export const checkTrades = () =>
     (t) => getCandles(t.symbol, "1D", 3).then((r) => trades.fromBar(t, (r.candles || []).at(-1))),
     (text, t) => send(text, { symbol: t.symbol, name: "" }),
   );
+// the buying and selling lines go before the analyst's note (or the record) in a signal's message
+export function addFlow(text, flow) {
+  if (!flow) return text;
+  const lines = text.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("🧠") || l.startsWith("📊"));
+  if (at < 0) return `${text}\n${flow}`;
+  lines.splice(at, 0, flow);
+  return lines.join("\n");
+}
 // over the buy zone by more than 3%
 export const chased = (r) => !!r.plan && (r.price - r.plan.entryZone.to) / r.plan.entryZone.to > 0.03;
 // what a near signal still lacks, in words

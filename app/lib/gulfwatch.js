@@ -9,6 +9,8 @@ import * as store from "./store.js";
 import * as alerts from "./alerts.js";
 import * as kwwatch from "./kwwatch.js";
 import * as trades from "./trades.js";
+import { flowFor } from "./flow.js";
+import { addFlow } from "./uswatch.js";
 import { write, ANALYST } from "./ai-write.js";
 import { scanRow, FILTERS, entryRules, TRAILS } from "../public/lib/kuwait-scan.js";
 import { equalIndex } from "../public/lib/kuwait-backtest.js";
@@ -195,7 +197,8 @@ async function runOnce({ force = false } = {}) {
         `حلل إشارة الشراء هذي في سهم من ${M.title} في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع ${M.title} العام، أي المقاومات تبدو واقعية، المخاطر (المسافة للوقف)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}`,
         2500,
       );
-      await send(entryMessage(r, { market, note }), r.symbol);
+      const flow = await flowFor(r.symbol, M.market).catch(() => "");
+      await send(addFlow(entryMessage(r, { market, note }), flow), r.symbol);
       follow(r);
     }
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 5 * 86400e3) delete state.sent[k];
