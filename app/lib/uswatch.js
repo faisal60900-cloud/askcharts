@@ -14,7 +14,8 @@ import { scanRow, US_TARGETS_R } from "../public/lib/kuwait-scan.js";
 import { ema } from "../public/lib/indicators.js";
 import * as trades from "./trades.js";
 
-const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true };
+// light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
+const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true };
 let cfg = { ...DEFAULTS, ...store.read("uswatch", {}) };
 let state = { sent: {}, newsSeen: {}, watched: {}, briefs: {}, lastRun: null, lastScanAt: 0, lastNewsAt: 0, lastEntries: [], near: [], lastError: null, ...store.read("uswatch-state", {}) };
 const saveState = () => store.write("uswatch-state", state);
@@ -47,7 +48,7 @@ export const settings = () => ({ ...cfg, aiError: aiw.lastError, ny: ny(), teleg
 
 export function update(patch = {}) {
   const next = { ...cfg };
-  for (const k of ["on", "news", "briefs", "ai"]) if (k in patch) next[k] = !!patch[k];
+  for (const k of ["on", "news", "briefs", "ai", "light"]) if (k in patch) next[k] = !!patch[k];
   if ("every" in patch) next.every = Math.min(60, Math.max(5, Number(patch.every) || 15));
   if ("size" in patch) next.size = [100, 300, 500, 1000].includes(Number(patch.size)) ? Number(patch.size) : 300;
   if ("minValue" in patch) next.minValue = Math.max(0, Number(patch.minValue) || 0);
@@ -344,8 +345,8 @@ async function tick() {
   try {
     const mk = m.weekday ? await usMarket().catch(() => ({ open: false, businessDay: true })) : { open: false, businessDay: false };
     if (!mk.businessDay) return;
-    if (cfg.briefs && d.pre) await brief("pre");
-    if (d.radar) {
+    if (cfg.briefs && !cfg.light && d.pre) await brief("pre");
+    if (d.radar && !cfg.light) {
       // marked first, so a failing feed doesn't retry it every minute
       (state.briefs[m.date] ||= {}).radar = Date.now();
       saveState();
@@ -357,7 +358,7 @@ async function tick() {
       await checkTrades();
     }
     if (mk.open && Date.now() - state.lastScanAt >= (d.fast ? 5 : cfg.every) * 60e3) await runOnce();
-    if (cfg.briefs && d.open && state.lastScanAt > Date.now() - 20 * 60e3) await brief("open");
+    if (cfg.briefs && !cfg.light && d.open && state.lastScanAt > Date.now() - 20 * 60e3) await brief("open");
     if (cfg.briefs && d.close) {
       await runOnce();
       await brief("close");

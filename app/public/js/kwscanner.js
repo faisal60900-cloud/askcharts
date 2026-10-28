@@ -263,7 +263,7 @@ export function renderKwScan(box, app, market = "kw") {
       <button class="btn ${w.on ? "primary" : ""}" id="usOn">${w.on ? "🔔 مراقبة أمريكا شغالة" : "🔕 شغّل مراقبة أمريكا"}</button>
       <label class="field">مسح كل<select id="usEvery">${[5, 10, 15, 30].map((m) => `<option value="${m}" ${m === w.every ? "selected" : ""}>${m} دقيقة</option>`).join("")}</select></label>
       <label class="field">عدد الأسهم<select id="usSize">${[100, 300, 500, 1000].map((n) => `<option value="${n}" ${n === w.size ? "selected" : ""}>أنشط ${n}</option>`).join("")}</select></label>
-      ${chip("briefs", "تقارير الافتتاح والإغلاق")}${chip("news", "أخبار بالعربي")}${chip("ai", "تحليل Claude")}
+      ${chip("briefs", "تقرير الإغلاق")}${chip("light", "رسائل أقل (بدون تقارير الافتتاح والرادار)")}${chip("news", "أخبار بالعربي")}${chip("ai", "تحليل Claude")}
     </div>
     <div class="row-flex" style="margin-top:6px">
       <button class="btn" data-usnow="run">افحص الآن وأرسل</button>
