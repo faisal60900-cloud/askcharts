@@ -253,6 +253,15 @@ export function saudiSessionFraction(barTime, now = Date.now()) {
   return Math.min(1, Math.max(0.05, (min - 10 * 60) / 310));
 }
 
+// The same for Dubai (DFM: Monday to Friday, 10:00-15:00 UAE time, UTC+4 all year).
+export function uaeSessionFraction(barTime, now = Date.now()) {
+  const k = new Date(now + 4 * 3600e3),
+    day = k.toISOString().slice(0, 10);
+  if (new Date(barTime * 1000 + 4 * 3600e3).toISOString().slice(0, 10) !== day) return 1;
+  const min = k.getUTCHours() * 60 + k.getUTCMinutes();
+  return Math.min(1, Math.max(0.05, (min - 10 * 60) / 300));
+}
+
 // The same for the US session (9:30-16:00 New York time, Monday to Friday, summer time included).
 export function usSessionFraction(barTime, now = Date.now()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(now)).map((p) => [p.type, p.value]));

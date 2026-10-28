@@ -1,6 +1,6 @@
 // ماسح السوق الكويتي: one row per stock from its daily bars, read with the Market Reader, and the
 // filters the scan offers. Pure numbers in and out, so it can be tested without a page.
-import { readMarket, kuwaitSessionFraction, usSessionFraction, saudiSessionFraction, readTimeframe } from "./market-reader.js";
+import { readMarket, kuwaitSessionFraction, usSessionFraction, saudiSessionFraction, uaeSessionFraction, readTimeframe } from "./market-reader.js";
 import { resample } from "./series.js";
 
 // Average daily traded value over the last n sessions, in the stock's own money (Kuwaiti bars
@@ -53,9 +53,15 @@ export const US_LIVE = { variant: "vol2", exit: "scale5" };
 export const SA_ENTRY_RULES = [...BASE_RULES, "weeklyUp", "rsiZone", "strongClose"];
 export const SA_TRAIL_ATR = 2.5;
 export const SA_LIVE = { variant: "combo", exit: "trail" };
-const RULES = { kw: ENTRY_RULES, us: US_ENTRY_RULES, sa: SA_ENTRY_RULES };
-export const TRAILS = { kw: TRAIL_ATR, us: US_TRAIL_ATR, sa: SA_TRAIL_ATR };
-const SESSION = { kw: kuwaitSessionFraction, us: usSessionFraction, sa: saudiSessionFraction };
+// Dubai (DFM), tested on 54 stocks from 2021 (lib/kwbacktest.js, market "ae"): the week trending up,
+// the breakout on twice the usual volume and a close near the day's high, with a trailing stop of 3
+// ATR, made +2.3% a trade on the years it was chosen on (to 2024) and +1.4% on 2025-2026 (about 100
+// signals in all, so a small sample).
+export const AE_ENTRY_RULES = [...BASE_RULES, "weeklyUp", "vol2", "strongClose"];
+export const AE_LIVE = { variant: "comboVol", exit: "trail3" };
+const RULES = { kw: ENTRY_RULES, us: US_ENTRY_RULES, sa: SA_ENTRY_RULES, ae: AE_ENTRY_RULES };
+export const TRAILS = { kw: TRAIL_ATR, us: US_TRAIL_ATR, sa: SA_TRAIL_ATR, ae: 3 };
+const SESSION = { kw: kuwaitSessionFraction, us: usSessionFraction, sa: saudiSessionFraction, ae: uaeSessionFraction };
 export const entryRules = (market) => RULES[market] || ENTRY_RULES;
 export const isEntry = (row, market = row?.market || "kw") => entryRules(market).every((k) => FILTERS[k].test(row));
 export const isBaseSignal = (row) => BASE_RULES.every((k) => FILTERS[k].test(row));

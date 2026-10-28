@@ -12,7 +12,7 @@ const save = () => store.write(KEY, book);
 export const reset = (b = { open: {}, closed: [] }) => (book = b);
 
 // how many calendar days a signal is followed (60 sessions in New York, 40 in Kuwait)
-export const MAX_DAYS = { us: 90, kw: 60, sa: 60 };
+export const MAX_DAYS = { us: 90, kw: 60, sa: 60, ae: 90 };
 const r2 = (v) => Math.round(v * 100) / 100;
 
 // A new trade from a signal. Targets the price had already passed when the signal was sent count as
@@ -103,8 +103,8 @@ export function fromBar(t, bar) {
 }
 
 // ---------- messages ----------
-const FLAG = { us: "🇺🇸", kw: "🇰🇼", sa: "🇸🇦" };
-const moneyOf = (market, v) => (market === "us" ? `${n2(v)}$` : market === "sa" ? `${n2(v)} ريال` : n2(v));
+const FLAG = { us: "🇺🇸", kw: "🇰🇼", sa: "🇸🇦", ae: "🇦🇪" };
+const moneyOf = (market, v) => (market === "us" ? `${n2(v)}$` : market === "sa" ? `${n2(v)} ريال` : market === "ae" ? `${n2(v)} درهم` : n2(v));
 const n2 = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 3 }));
 const pct = (v) => `${v > 0 ? "+" : ""}${n2(r2(v))}%`;
 export function message(t, e) {

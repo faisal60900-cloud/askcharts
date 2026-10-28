@@ -9,13 +9,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
 import { SAUDI_STOCKS } from "../public/lib/saudi-market.js";
+import { UAE_STOCKS } from "../public/lib/uae-market.js";
 import { signalsFor, compare, equalIndex, VARIANTS, VARIANTS_US, VARIANTS_SA, LIVE } from "../public/lib/kuwait-backtest.js";
-import { US_LIVE, SA_LIVE } from "../public/lib/kuwait-scan.js";
+import { US_LIVE, SA_LIVE, AE_LIVE } from "../public/lib/kuwait-scan.js";
 
-const KEY = { kw: "kwbacktest", us: "usbacktest", sa: "sabacktest" };
-const jobs = { kw: store.read(KEY.kw, null), us: store.read(KEY.us, null), sa: store.read(KEY.sa, null) };
-const running = { kw: false, us: false, sa: false };
-const SETS = { kw: { variants: VARIANTS, live: LIVE }, us: { variants: VARIANTS_US, live: US_LIVE }, sa: { variants: VARIANTS_SA, live: SA_LIVE } };
+const KEY = { kw: "kwbacktest", us: "usbacktest", sa: "sabacktest", ae: "aebacktest" };
+const jobs = Object.fromEntries(Object.entries(KEY).map(([m, k]) => [m, store.read(k, null)]));
+const running = { kw: false, us: false, sa: false, ae: false };
+const LISTS = { kw: KUWAIT_STOCKS, sa: SAUDI_STOCKS, ae: UAE_STOCKS };
+const SETS = { kw: { variants: VARIANTS, live: LIVE }, us: { variants: VARIANTS_US, live: US_LIVE }, sa: { variants: VARIANTS_SA, live: SA_LIVE }, ae: { variants: VARIANTS_SA, live: AE_LIVE } };
 
 export const status = (market = "kw") => ({ market, running: running[market], ...(jobs[market] || {}) });
 
@@ -29,15 +31,15 @@ async function usList(size) {
 }
 
 export function start({ market = "kw", limit = 1500, size = 300 } = {}) {
-  market = ["us", "sa"].includes(market) ? market : "kw";
+  market = KEY[market] ? market : "kw";
   if (running[market]) return status(market);
   running[market] = true;
   let job = (jobs[market] = { startedAt: new Date().toISOString(), done: 0, of: 0, stocks: 0, failed: [] });
   (async () => {
-    const list = market === "us" ? await usList(Math.min(1000, Math.max(50, Number(size) || 300))) : market === "sa" ? SAUDI_STOCKS : KUWAIT_STOCKS;
+    const list = market === "us" ? await usList(Math.min(1000, Math.max(50, Number(size) || 300))) : LISTS[market];
     let index = market === "us" ? (await getCandles("US:SPY", "1D", limit).catch(() => ({ candles: [] }))).candles : null;
     // Saudi: every stock's bars first, for the equal-weighted market index, then the signals
-    const held = market === "sa" ? new Map() : null;
+    const held = market === "sa" || market === "ae" ? new Map() : null;
     job.of = list.length;
     const events = [];
     let i = 0;
@@ -89,7 +91,7 @@ export function start({ market = "kw", limit = 1500, size = 300 } = {}) {
 // For research: every stock's daily bars of a market, written to app/research/<market>-bars.json
 // (compact: [time, open, high, low, close, volume] rows).
 export async function dump({ market = "sa", limit = 1500 } = {}) {
-  const list = market === "sa" ? SAUDI_STOCKS : market === "kw" ? KUWAIT_STOCKS : await usList(300);
+  const list = LISTS[market] || (await usList(300));
   const out = {};
   let i = 0;
   const worker = async () => {

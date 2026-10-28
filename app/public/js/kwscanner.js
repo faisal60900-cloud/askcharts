@@ -4,6 +4,7 @@
 import { api } from "./api.js";
 import { KUWAIT_STOCKS } from "../lib/kuwait-market.js";
 import { SAUDI_STOCKS } from "../lib/saudi-market.js";
+import { UAE_STOCKS } from "../lib/uae-market.js";
 import { scanRow, FILTERS, entryRules } from "../lib/kuwait-scan.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -12,7 +13,8 @@ const num = (v, d = 1) => (v == null || !Number.isFinite(v) ? "—" : Number(v).
 const MARKETS = {
   kw: { key: "askcharts.kwscan", minValue: 10000, cur: "د.ك", title: "السوق الكويتي" },
   us: { key: "askcharts.usscan", minValue: 20e6, cur: "$", title: "السوق الأمريكي" },
-  sa: { key: "askcharts.sascan", minValue: 5e6, cur: "ريال", title: "السوق السعودي" },
+  sa: { key: "askcharts.sascan", minValue: 5e6, cur: "ريال", title: "السوق السعودي", list: SAUDI_STOCKS, flag: "🇸🇦" },
+  ae: { key: "askcharts.aescan", minValue: 2e6, cur: "درهم", title: "سوق دبي", list: UAE_STOCKS, flag: "🇦🇪" },
 };
 function makeState(m) {
   const st = { rows: [], at: 0, running: false, stop: false, done: 0, failed: 0, of: 0, on: new Set(), entryOnly: false, minValue: MARKETS[m].minValue, size: 500, q: "", sort: "score", dir: -1, m };
@@ -28,7 +30,7 @@ function makeState(m) {
   } catch {}
   return st;
 }
-const states = { kw: makeState("kw"), us: makeState("us"), sa: makeState("sa") };
+const states = { kw: makeState("kw"), us: makeState("us"), sa: makeState("sa"), ae: makeState("ae") };
 const save = (st) => {
   try {
     localStorage.setItem(MARKETS[st.m].key, JSON.stringify({ rows: st.rows, at: st.at, prefs: { on: [...st.on], entryOnly: st.entryOnly, minValue: st.minValue, size: st.size } }));
@@ -103,7 +105,7 @@ export function renderKwScan(box, app, market = "kw") {
   const st = states[market],
     M = MARKETS[market],
     kw = market === "kw",
-    sa = market === "sa";
+    sa = market === "sa" || market === "ae";
   const cols = [
     ["code", "السهم"],
     ["price", "السعر"],
@@ -127,7 +129,7 @@ export function renderKwScan(box, app, market = "kw") {
     const t = box.querySelector("#kwTable");
     if (!t) return;
     if (!st.rows.length) {
-      t.innerHTML = `<div class="pad hint-text">اضغط <b>ابدأ المسح</b> ليقرأ البرنامج ${kw ? `${KUWAIT_STOCKS.length} سهمًا في بورصة الكويت (أقل من دقيقة)` : sa ? `${SAUDI_STOCKS.length} سهم في السوق السعودي الرئيسي (تقريبًا دقيقة)` : `أنشط ${st.size} سهم أمريكي (سعر فوق 5$ وقيمة سوقية فوق 2 مليار، الأعلى تداولًا أولًا). يأخذ تقريبًا ${Math.ceil(st.size / 100)} دقيقة`}.</div>`;
+      t.innerHTML = `<div class="pad hint-text">اضغط <b>ابدأ المسح</b> ليقرأ البرنامج ${kw ? `${KUWAIT_STOCKS.length} سهمًا في بورصة الكويت (أقل من دقيقة)` : sa ? `${M.list.length} سهم في ${M.title} (أقل من دقيقة)` : `أنشط ${st.size} سهم أمريكي (سعر فوق 5$ وقيمة سوقية فوق 2 مليار، الأعلى تداولًا أولًا). يأخذ تقريبًا ${Math.ceil(st.size / 100)} دقيقة`}.</div>`;
       return;
     }
     const rows = visible(st);
@@ -177,7 +179,7 @@ export function renderKwScan(box, app, market = "kw") {
     <label class="field">أقل قيمة تداول يومية (${M.cur})<input id="kwMin" type="number" min="0" step="${kw ? 1000 : 1000000}" value="${st.minValue}" style="width:120px"></label>
     <button class="btn ${st.entryOnly ? "primary" : ""}" id="kwEntry" title="${entryRules(market).map((k) => FILTERS[k].ar).join(" + ")}">${st.entryOnly ? "✓ " : ""}إشارات دخول شراء فقط</button>
   </div>
-  ${kw ? '<div class="kw-watch" id="kwWatch"></div>' : sa ? '<div class="kw-watch" id="saWatch"></div><div class="kw-watch hint-text">🇸🇦 السوق السعودي الرئيسي (بدون صناديق الريت). الأسعار بالريال، والجلسة من 10:00 الصبح إلى 3:00 العصر (نفس توقيت الكويت) ثم مزاد الإغلاق، والسيولة مقارنة بالجزء اللي مضى من الجلسة.</div>' : '<div class="kw-watch" id="usWatch"></div><div class="kw-watch hint-text">🇺🇸 شروط خاصة بالسوق الأمريكي من اختبار تاريخه: اختراق بسيولة <b>2x فأكثر</b> ووقف متحرك أوسع (3 ATR). الأسعار بالدولار، والسيولة مقارنة بالجزء اللي مضى من جلسة نيويورك (4:30 العصر إلى 11 الليل بتوقيت الكويت).</div>'}
+  ${kw ? '<div class="kw-watch" id="kwWatch"></div>' : sa ? `<div class="kw-watch" id="saWatch"></div><div class="kw-watch hint-text">${market === "sa" ? "🇸🇦 السوق السعودي الرئيسي (بدون صناديق الريت). الأسعار بالريال، والجلسة من 10:00 الصبح إلى 3:00 العصر (نفس توقيت الكويت) ثم مزاد الإغلاق" : "🇦🇪 سوق دبي المالي (أبوظبي مو متوفر في مصدر البيانات المجاني). الأسعار بالدرهم، والجلسة من الاثنين للجمعة 9:00 الصبح إلى 2:00 الظهر بتوقيت الكويت. شروط دبي من اختبار تاريخه: اختراق بسيولة 2x + أسبوعي صاعد + إغلاق قوي، ووقف متحرك 3 ATR"}، والسيولة مقارنة بالجزء اللي مضى من الجلسة.</div>` : '<div class="kw-watch" id="usWatch"></div><div class="kw-watch hint-text">🇺🇸 شروط خاصة بالسوق الأمريكي من اختبار تاريخه: اختراق بسيولة <b>2x فأكثر</b> ووقف متحرك أوسع (3 ATR). الأسعار بالدولار، والسيولة مقارنة بالجزء اللي مضى من جلسة نيويورك (4:30 العصر إلى 11 الليل بتوقيت الكويت).</div>'}
   <div class="kw-watch" id="kwTrack"></div>
   <div class="row-flex kw-chips">${Object.entries(FILTERS)
     .map(([k, f]) => `<label class="kw-chip ${st.on.has(k) ? "on" : ""}"><input type="checkbox" data-fl="${k}" ${st.on.has(k) ? "checked" : ""} ${st.entryOnly ? "disabled" : ""}>${esc(f.ar)}</label>`)
@@ -197,7 +199,7 @@ export function renderKwScan(box, app, market = "kw") {
     prog();
     let list;
     try {
-      list = kw ? KUWAIT_STOCKS : sa ? SAUDI_STOCKS : await usUniverse(st.size);
+      list = kw ? KUWAIT_STOCKS : sa ? M.list : await usUniverse(st.size);
     } catch (err) {
       app.toast?.(`ما قدرت أجيب قائمة الأسهم الأمريكية: ${err.message}`);
       return renderKwScan(box, app, market);
@@ -306,25 +308,25 @@ export function renderKwScan(box, app, market = "kw") {
     if (!el) return;
     let w;
     try {
-      w = await api.get("/api/sawatch");
+      w = await api.get(`/api/${market}watch`);
     } catch {
-      el.innerHTML = '<span class="hint-text">مراقبة السعودية تحتاج إعادة تشغيل البرنامج.</span>';
+      el.innerHTML = '<span class="hint-text">المراقبة تحتاج إعادة تشغيل البرنامج.</span>';
       return;
     }
     const when = w.lastRun ? new Date(w.lastRun).toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit" }) : "—";
     const chip = (k, label) => `<label class="kw-chip ${w[k] ? "on" : ""}"><input type="checkbox" data-sa="${k}" ${w[k] ? "checked" : ""}>${label}</label>`;
     el.innerHTML = `<div class="row-flex">
-      <button class="btn ${w.on ? "primary" : ""}" id="saOn">${w.on ? "🔔 مراقبة السعودية شغالة" : "🔕 شغّل مراقبة السعودية"}</button>
+      <button class="btn ${w.on ? "primary" : ""}" id="saOn">${w.on ? `🔔 مراقبة ${M.title} شغالة` : `🔕 شغّل مراقبة ${M.title}`}</button>
       <label class="field">مسح كل<select id="saEvery">${[5, 10, 15, 30].map((m) => `<option value="${m}" ${m === w.every ? "selected" : ""}>${m} دقيقة</option>`).join("")}</select></label>
       ${chip("regime", "نبهني إذا تغير اتجاه السوق")}${chip("briefs", "ملخص الإغلاق")}${chip("ai", "تحليل Claude")}
       <button class="btn" data-sanow="run">افحص الآن وأرسل</button>
       <button class="btn" data-sanow="close">أرسل ملخص الإغلاق الآن</button>
     </div>
     <div class="hint-text">${w.telegram ? "📱 يرسل على تيليجرام" : '<span class="down">تيليجرام مو مربوط: اربطه من تبويب ماسح الكويت ← 📱 للجوال</span>'} · السوق الحين ${w.sessionOpen ? '<b class="up">مفتوح</b>' : "مغلق"} · آخر مسح ${when}${w.market ? ` · السوق العام ${w.market.up ? '<b class="up">فوق متوسط 50</b>' : '<b class="down">تحت متوسط 50</b>'}${w.market.up200 != null ? ` و${w.market.up200 ? '<b class="up">فوق</b>' : '<b class="down">تحت</b>'} متوسط 200` : ""}` : ""}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.trades?.length ? ` · صفقات تحت المتابعة: ${w.trades.map((t) => esc(t.code)).join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}<br>
-    ⚠️ اختبرت عدة طرق شراء على السوق السعودي من 2022: كلها خسرت في 2025–2026 لأن السوق نازل، فإشارات الشراء التلقائية مطفأة. «نبهني إذا تغير اتجاه السوق» يرسل لك على تيليجرام لما يرجع السوق فوق متوسط 200 يوم (أو ينزل تحته).<br>إذا شغلت المراقبة: يمسح من الأحد للخميس 10:00–3:10 العصر، ويتابع كل إشارة (المقاومات والوقف المتحرك)، وملخص الإغلاق 3:20 العصر.${w.near?.length ? `<br>أقرب الأسهم للإشارة: ${w.near.map((r) => `<b>${esc(r.code)} ${esc(r.ar)}</b> (ينقصه ${esc(r.why)})`).join(" · ")}` : ""}</div>`;
+    ${market === "sa" ? "⚠️ اختبرت عدة طرق شراء على السوق السعودي من 2022: كلها خسرت في 2025–2026 لأن السوق نازل، فإشارات الشراء التلقائية مطفأة. «نبهني إذا تغير اتجاه السوق» يرسل لك على تيليجرام لما يرجع السوق فوق متوسط 200 يوم (أو ينزل تحته).<br>إذا شغلت المراقبة: يمسح من الأحد للخميس 10:00–3:10 العصر" : "يمسح من الاثنين للجمعة 9:00–2:00 الظهر بتوقيت الكويت"}، ويتابع كل إشارة (المقاومات والوقف المتحرك)، وملخص الإغلاق ${market === "sa" ? "3:20 العصر" : "2:10 الظهر"}.${w.near?.length ? `<br>أقرب الأسهم للإشارة: ${w.near.map((r) => `<b>${esc(r.code)} ${esc(r.ar)}</b> (ينقصه ${esc(r.why)})`).join(" · ")}` : ""}</div>`;
     const post = async (patch) => {
       try {
-        await api.post("/api/sawatch", { minValue: st.minValue, ...patch });
+        await api.post(`/api/${market}watch`, { minValue: st.minValue, ...patch });
       } catch (e) {
         app.toast?.(e.message);
       }
@@ -340,7 +342,7 @@ export function renderKwScan(box, app, market = "kw") {
           b.disabled = true;
           b.textContent = "جاري…";
           try {
-            const r = await api.post(k === "run" ? "/api/sawatch/run" : "/api/sawatch/close");
+            const r = await api.post(k === "run" ? `/api/${market}watch/run` : `/api/${market}watch/close`);
             app.toast?.(k === "run" ? (r.busy ? "فيه مسح شغال الحين." : r.sent ? `أُرسلت ${r.sent} إشارة شراء.` : `مسح ${r.scanned} سهم: لا توجد إشارة شراء جديدة.`) : "أُرسل ملخص الإغلاق ✓");
           } catch (e) {
             app.toast?.(e.message);
@@ -373,7 +375,7 @@ export function renderKwScan(box, app, market = "kw") {
           ${Object.entries(L.byYear || {}).map(([y, x]) => row(`سنة ${y}`, x)).join("")}
           ${row("للمقارنة: الشروط القديمة + البيع عند الهدف الأول", b.grid?.["base|t1"] && { ...b.grid["base|t1"].train, n: b.grid["base|t1"].train.n + b.grid["base|t1"].check.n, avgRet: Math.round(((b.grid["base|t1"].train.avgRet * b.grid["base|t1"].train.n + b.grid["base|t1"].check.avgRet * b.grid["base|t1"].check.n) / (b.grid["base|t1"].train.n + b.grid["base|t1"].check.n)) * 100) / 100, profitable: null, profitFactor: null, avgDays: b.grid["base|t1"].train.avgDays })}
           </tbody></table>
-          <div class="hint-text">الدخول بسعر افتتاح الجلسة التالية، والخروج بالوقف المتحرك. النتائج الماضية لا تضمن المستقبل.${kw ? " سنة 2026 كانت أضعف." : sa ? " قائمة الأسهم هي المدرجة اليوم، فالشركات اللي انشطبت مو فيها." : " القائمة الأمريكية هي أنشط الأسهم اليوم، فالنتائج قد تكون أفضل من الواقع (أسهم نجحت فبقيت نشطة)."}</div>`
+          <div class="hint-text">الدخول بسعر افتتاح الجلسة التالية، والخروج بالوقف المتحرك. النتائج الماضية لا تضمن المستقبل.${kw ? " سنة 2026 كانت أضعف." : sa ? " قائمة الأسهم هي المدرجة اليوم، فالشركات اللي انشطبت مو فيها، والعينة صغيرة." : " القائمة الأمريكية هي أنشط الأسهم اليوم، فالنتائج قد تكون أفضل من الواقع (أسهم نجحت فبقيت نشطة)."}</div>`
         : `<div class="row-flex"><span class="hint-text">📊 ما انختبرت الإشارة على تاريخ ${M.title} بعد.</span><button class="btn" id="kwBtRun">اختبرها على آخر 5 سنوات</button></div>`;
     const run = el.querySelector("#kwBtRun");
     if (run)

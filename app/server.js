@@ -18,6 +18,7 @@ import * as kwwatch from "./lib/kwwatch.js";
 import * as kwbacktest from "./lib/kwbacktest.js";
 import * as uswatch from "./lib/uswatch.js";
 import * as sawatch from "./lib/sawatch.js";
+import * as aewatch from "./lib/aewatch.js";
 import * as trades from "./lib/trades.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
@@ -458,6 +459,15 @@ async function handle(req, res) {
     if (p === "/api/uswatch/ai-test" && req.method === "POST") return send(res, 200, await uswatch.aiTest());
     if (p === "/api/uswatch/preview") return send(res, 200, await uswatch.preview(q.code));
     if (p === "/api/uswatch/radar" && req.method === "POST") return send(res, 200, await uswatch.radar());
+    for (const [k, W] of [["ae", aewatch]]) {
+      if (p === `/api/${k}watch`) {
+        if (req.method === "GET") return send(res, 200, W.settings());
+        if (req.method === "POST") return send(res, 200, W.update(await readBody(req, 1e4)));
+      }
+      if (p === `/api/${k}watch/run` && req.method === "POST") return send(res, 200, await W.runOnce());
+      if (p === `/api/${k}watch/close` && req.method === "POST") return send(res, 200, await W.closeBrief());
+      if (p === `/api/${k}watch/regime` && req.method === "POST") return send(res, 200, await W.regimeCheck());
+    }
     if (p === "/api/sawatch") {
       if (req.method === "GET") return send(res, 200, sawatch.settings());
       if (req.method === "POST") return send(res, 200, sawatch.update(await readBody(req, 1e4)));
@@ -466,11 +476,11 @@ async function handle(req, res) {
     if (p === "/api/sawatch/regime" && req.method === "POST") return send(res, 200, await sawatch.regimeCheck());
     if (p === "/api/sawatch/close" && req.method === "POST") return send(res, 200, await sawatch.closeBrief());
     if (p === "/api/trades") return send(res, 200, { open: trades.list(), closed: trades.closed().slice(0, 50) });
-    if (p === "/api/trades/check" && req.method === "POST") return send(res, 200, { us: await uswatch.checkTrades(), kw: await kwwatch.checkTrades(), sa: await sawatch.checkTrades() });
+    if (p === "/api/trades/check" && req.method === "POST") return send(res, 200, { us: await uswatch.checkTrades(), kw: await kwwatch.checkTrades(), sa: await sawatch.checkTrades(), ae: await aewatch.checkTrades() });
     // ---------- the Kuwait entry signal tested on the market's history ----------
     if (p === "/api/research/dump" && req.method === "POST") return send(res, 200, await kwbacktest.dump(await readBody(req, 1e3)));
     if (p === "/api/kwbacktest") {
-      if (req.method === "GET") return send(res, 200, kwbacktest.status(["us", "sa"].includes(q.market) ? q.market : "kw"));
+      if (req.method === "GET") return send(res, 200, kwbacktest.status(["us", "sa", "ae"].includes(q.market) ? q.market : "kw"));
       if (req.method === "POST") return send(res, 200, kwbacktest.start(await readBody(req, 1e3)));
     }
     // ---------- the Kuwait market watch: settings, and a scan now ----------
@@ -663,6 +673,7 @@ if (isMain) {
   kwwatch.start();
   uswatch.start();
   sawatch.start();
+  aewatch.start();
   console.log(
     `\n  AskCharts ${VERSION} is running\n\n  Open:  ${url}\n  Stop:  Ctrl+C\n  Data:  ${store.DATA_DIR}\n`,
   );

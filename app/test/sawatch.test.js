@@ -53,3 +53,12 @@ test("the market's turn is sent once, when it crosses the 200-day average", () =
   assert.match(S.regimeMessage({ up200: true, from200: 1.2 }, false), /رجع فوق متوسط 200/);
   assert.match(S.regimeMessage({ up200: false, from200: -0.5 }, true), /نزل تحت متوسط 200/);
 });
+
+test("Dubai: its own clock (UTC+4, Monday to Friday) and the dirham", async () => {
+  const A = await import("../lib/aewatch.js");
+  assert.equal(A.sessionOpen(A.clock(new Date("2026-10-30T07:00:00Z"))), true, "Friday 11:00 in Dubai");
+  assert.equal(A.sessionOpen(A.clock(new Date("2026-11-01T07:00:00Z"))), false, "Sunday");
+  assert.equal(A.sessionOpen(A.clock(new Date("2026-10-28T05:30:00Z"))), false, "9:30, before the open");
+  const t = A.entryMessage({ code: "EMAAR", ar: "إعمار العقارية", price: 11.5, changePct: 1, value: 80e6, breakout: { level: 11.3, vol: 2.4 }, flow: { inflowPct: 60 }, buyToday: 66, weekly: 1, rsi: 60, positives: 6, negatives: 1, plan: { entryZone: { from: 11.3, to: 11.45 }, stop: 10.9, targets: [] }, trail: { dist: 0.6 } });
+  for (const part of ["🇦🇪", "11.3 درهم", "مليون درهم", "3 ATR"]) assert.ok(t.includes(part), part);
+});
