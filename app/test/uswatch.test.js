@@ -105,3 +105,9 @@ test("the buying and selling lines go before the analyst's note", () => {
   assert.equal(U.addFlow("a\nb", "FLOW"), "a\nb\nFLOW");
   assert.equal(U.addFlow("a", ""), "a");
 });
+
+test("a stock already up more than 6% today is late too", () => {
+  const plan = { entryZone: { from: 100, to: 102 }, stop: 96 };
+  assert.equal(U.chased({ price: 101, changePct: 7.5, plan }), true);
+  assert.equal(U.chased({ price: 101, changePct: 4, plan }), false);
+});

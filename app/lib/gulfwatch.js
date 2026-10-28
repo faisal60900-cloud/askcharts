@@ -51,6 +51,12 @@ const DEFAULTS = { on: false, every: 5, minValue: M.minValue, ai: true, briefs: 
 let cfg = { ...DEFAULTS, ...store.read(`${M.market}watch`, {}) };
 let state = { sent: {}, lastRun: null, lastEntries: [], near: [], lastError: null, closeFor: null, market: null, regimeFor: null, regimeUp: null, ...store.read(`${M.market}watch-state`, {}) };
 const saveState = () => store.write(`${M.market}watch-state`, state);
+// sent keys were stock|level|day; now stock|day (one signal a stock a day)
+for (const k of Object.keys(state.sent || {})) {
+  const p = k.split("|");
+  if (p.length === 3) state.sent[`${p[0]}|${p[2]}`] = state.sent[k];
+}
+
 let timer = null,
   tradesTimer = null,
   busy = false;
@@ -87,6 +93,7 @@ const ai = (prompt, maxTokens) => (cfg.ai ? write(ANALYST, prompt, { maxTokens }
 
 const sar = (v) => `${n2(v)} ${M.cur}`;
 
+const late = (r) => (!!r.plan && (r.price - r.plan.entryZone.to) / r.plan.entryZone.to > 0.03) || (r.changePct ?? 0) > 5;
 function track() {
   const live = store.read(`${M.market}backtest`, null)?.live;
   if (!live?.all?.n) return "";
@@ -191,9 +198,10 @@ async function runOnce({ force = false } = {}) {
     state.market = market;
     const entries = ok.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue);
     const date = clock().date;
-    const fresh = entries.filter((r) => force || !state.sent[`${r.code}|${r.breakout?.level}|${date}`]);
+    // late ones (more than 3% over the buy zone, or up more than 5% today) aren't sent
+    const fresh = entries.filter((r) => force || (!state.sent[`${r.code}|${date}`] && !late(r)));
     for (const r of fresh) {
-      state.sent[`${r.code}|${r.breakout?.level}|${date}`] = Date.now();
+      state.sent[`${r.code}|${date}`] = Date.now();
       const note = await ai(
         `حلل إشارة الشراء هذي في سهم من ${M.title} في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع ${M.title} العام، أي المقاومات تبدو واقعية، المخاطر (المسافة للوقف)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}`,
         2500,

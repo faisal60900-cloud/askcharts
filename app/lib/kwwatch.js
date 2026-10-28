@@ -14,6 +14,12 @@ import * as prealert from "./prealert.js";
 const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "", tgToken: "", tgChat: "", tgBot: "", prealerts: true };
 let cfg = { ...DEFAULTS, ...store.read("kwwatch", {}) };
 let state = store.read("kwwatch-state", { sent: {}, lastRun: null, lastEntries: [], lastError: null });
+// sent keys were stock|level|day; now stock|day (one signal a stock a day)
+for (const k of Object.keys(state.sent || {})) {
+  const p = k.split("|");
+  if (p.length === 3) state.sent[`${p[0]}|${p[2]}`] = state.sent[k];
+}
+
 let timer = null,
   running = null;
 
@@ -250,8 +256,10 @@ export async function runOnce({ force = false } = {}) {
     const entries = rows.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue);
     const fresh = [];
     for (const r of entries) {
-      const key = `${r.code}|${r.breakout?.level}|${today}`;
+      const key = `${r.code}|${today}`;
       if (!force && state.sent[key]) continue;
+      // late (more than 3% over the buy zone, or up more than 5% today): not sent, maybe later
+      if (!force && ((r.plan && (r.price - r.plan.entryZone.to) / r.plan.entryZone.to > 0.03) || (r.changePct ?? 0) > 5)) continue;
       state.sent[key] = Date.now();
       fresh.push(r);
     }

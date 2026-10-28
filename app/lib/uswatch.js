@@ -21,6 +21,12 @@ const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, 
 let cfg = { ...DEFAULTS, ...store.read("uswatch", {}) };
 let state = { sent: {}, newsSeen: {}, watched: {}, briefs: {}, lastRun: null, lastScanAt: 0, lastNewsAt: 0, lastEntries: [], near: [], lastError: null, ...store.read("uswatch-state", {}) };
 const saveState = () => store.write("uswatch-state", state);
+// sent keys were stock|level|day; now stock|day (one signal a stock a day)
+for (const k of Object.keys(state.sent || {})) {
+  const p = k.split("|");
+  if (p.length === 3) state.sent[`${p[0]}|${p[2]}`] = state.sent[k];
+}
+
 let timer = null,
   busy = false;
 
@@ -139,6 +145,7 @@ export function entryMessage(r, { market = null, note = null, reach = reachOf() 
   return [
     `🟢🇺🇸 إشارة شراء — ${r.code} (${r.en})`,
     `السعر الآن: ${usd(r.price)} (${pct(r.changePct)} اليوم)`,
+    (r.changePct ?? 0) > 3 ? `⚠️ السهم طالع اليوم ${pct(r.changePct)}: جزء من الحركة صار، والأحوط تشتري بكمية أقل أو تنتظر تراجع للمنطقة.` : "",
     `📈 الاختراق: ${usd(r.breakout?.level)} ✓ بسيولة ${n2(r.breakout?.vol, 1)}x · سيولة داخلة ${r.flow?.inflowPct}% · الشراء ${r.buyToday}%`,
     p ? `🎯 الشراء من منطقة: ${usd(p.entryZone.from)} – ${usd(p.entryZone.to)}` : "",
     away != null && away > 3 ? `⚠️ السعر الآن فوق منطقة الشراء بـ ${n2(away, 1)}%${R && r.price >= tR(1) ? ` وتجاوز الهدف ${US_TARGETS_R.filter((m) => r.price >= tR(m)).length}` : ""}: الشراء من هنا مخاطرته أعلى لأن الوقف صار أبعد، والأحسن تنتظر رجوع السعر للمنطقة.` : away != null && away > 0 ? `السعر قريب من منطقة الشراء (فوقها بـ ${n2(away, 1)}%).` : p ? "✅ السعر داخل منطقة الشراء الآن." : "",
@@ -179,11 +186,13 @@ export async function runOnce({ force = false } = {}) {
     const ok = rows.filter((r) => !r.error);
     const entries = ok.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue);
     const date = ny().date;
-    const unsent = entries.filter((r) => force || !state.sent[`${r.code}|${r.breakout?.level}|${date}`]);
-    for (const r of unsent) state.sent[`${r.code}|${r.breakout?.level}|${date}`] = Date.now();
+    const unsent = entries.filter((r) => force || !state.sent[`${r.code}|${date}`]);
+
     // A signal the price has already run away from (more than 3% over the buy zone) is a chase, not
     // the trade that was tested: it goes in the close summary instead of a message now.
+    // (a late one isn't marked sent: if the price comes back to the zone, it can still go out)
     const fresh = unsent.filter((r) => force || !chased(r));
+    for (const r of fresh) state.sent[`${r.code}|${date}`] = Date.now();
     (state.chased ||= {})[date] = [...new Set([...(state.chased[date] || []), ...unsent.filter((r) => !fresh.includes(r)).map((r) => r.code)])];
     for (const d of Object.keys(state.chased)) if (d < date) delete state.chased[d];
     const market = fresh.length ? await snapshot().catch(() => null) : null;
@@ -255,8 +264,10 @@ export function addFlow(text, flow) {
   lines.splice(at, 0, flow);
   return lines.join("\n");
 }
-// over the buy zone by more than 3%
-export const chased = (r) => !!r.plan && (r.price - r.plan.entryZone.to) / r.plan.entryZone.to > 0.03;
+// Too late to send: the price more than 3% over the buy zone, or the stock already up more than 6%
+// today (a gap or a run: the move the signal would have caught has mostly happened).
+export const LATE_DAY_PCT = 6;
+export const chased = (r) => (!!r.plan && (r.price - r.plan.entryZone.to) / r.plan.entryZone.to > 0.03) || (r.changePct ?? 0) > LATE_DAY_PCT;
 // what a near signal still lacks, in words
 function missing(r) {
   const m = [];
@@ -279,7 +290,7 @@ const ASK = {
 export async function brief(kind = "pre") {
   const snap = await snapshot();
   const ch = state.chased?.[ny().date] || [];
-  const sig = (state.lastEntries.length ? `إشارات الدخول في آخر مسح: ${state.lastEntries.join("، ")}` : "لا توجد إشارات دخول في آخر مسح.") + (ch.length ? `\nإشارات ما أُرسلت لأن السعر كان طالع فوق منطقة الشراء بأكثر من 3%: ${ch.join("، ")}` : "");
+  const sig = (state.lastEntries.length ? `إشارات الدخول في آخر مسح: ${state.lastEntries.join("، ")}` : "لا توجد إشارات دخول في آخر مسح.") + (ch.length ? `\nإشارات ما أُرسلت لأنها جت متأخرة (السعر فوق منطقة الشراء بأكثر من 3% أو السهم طالع أكثر من 6% في اليوم): ${ch.join("، ")}` : "");
   const near = state.near.length ? `أقرب الأسهم للإشارة:\n${state.near.map((r) => `${r.code} (${r.en}) ${usd(r.price)}: ينقصه ${r.why || "—"}`).join("\n")}` : "";
   const facts = `${snapshotText(snap)}\n\n${sig}\n${near}\n\nعناوين أخبار السوق (بالإنجليزي):\n${snap.headlines.join("\n") || "لا توجد"}`;
   const note = await ai(`${ASK[kind]}\n\nالمعطيات:\n${facts}`, 3000);
