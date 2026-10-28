@@ -92,3 +92,10 @@ test("a brief sent by hand before its time doesn't stop the scheduled one", () =
   assert.deepEqual(U.scheduledFlags("2026-10-27", { "2026-10-27": { pre: early, radar: early } }), {});
   assert.deepEqual(Object.keys(U.scheduledFlags("2026-10-27", { "2026-10-27": { pre: onTime } })), ["pre"]);
 });
+
+test("a signal the price already ran 3% past the buy zone is a chase, not sent", () => {
+  const plan = { entryZone: { from: 100, to: 102 }, stop: 96 };
+  assert.equal(U.chased({ price: 103, plan }), false);
+  assert.equal(U.chased({ price: 105.2, plan }), true);
+  assert.equal(U.chased({ price: 105.2, plan: null }), false);
+});

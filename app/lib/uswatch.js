@@ -172,19 +172,31 @@ export async function runOnce({ force = false } = {}) {
         }
       }
     };
-    await Promise.all([worker(), worker(), worker()]);
+    // six at a time: the 500 stocks in about a minute
+    await Promise.all(Array.from({ length: 6 }, worker));
     const ok = rows.filter((r) => !r.error);
     const entries = ok.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue);
     const date = ny().date;
-    const fresh = entries.filter((r) => force || !state.sent[`${r.code}|${r.breakout?.level}|${date}`]);
+    const unsent = entries.filter((r) => force || !state.sent[`${r.code}|${r.breakout?.level}|${date}`]);
+    for (const r of unsent) state.sent[`${r.code}|${r.breakout?.level}|${date}`] = Date.now();
+    // A signal the price has already run away from (more than 3% over the buy zone) is a chase, not
+    // the trade that was tested: it goes in the close summary instead of a message now.
+    const fresh = unsent.filter((r) => force || !chased(r));
+    (state.chased ||= {})[date] = [...new Set([...(state.chased[date] || []), ...unsent.filter((r) => !fresh.includes(r)).map((r) => r.code)])];
+    for (const d of Object.keys(state.chased)) if (d < date) delete state.chased[d];
     const market = fresh.length ? await snapshot().catch(() => null) : null;
-    for (const r of fresh) {
-      state.sent[`${r.code}|${r.breakout?.level}|${date}`] = Date.now();
-      const heads = (await newsOf(r.symbol).catch(() => ({ items: [] }))).items.slice(0, 4).map((h) => h.title);
-      const note = await ai(
-        `حلل إشارة الاختراق هذي في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع السوق العام، أي الأهداف الخمسة تبدو واقعية مع المقاومات في الطريق، المخاطر (المسافة للوقف، أي خبر مهم)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}\n\nآخر عناوين أخبار السهم (بالإنجليزي):\n${heads.join("\n") || "لا توجد"}\n\nحالة السوق:\n${market ? snapshotText(market) : "غير متاحة"}`,
-        2500,
-      );
+    // the analyst's notes all at once, so the last signal isn't kept waiting for the others'
+    const notes = await Promise.all(
+      fresh.map(async (r) => {
+        const heads = (await newsOf(r.symbol).catch(() => ({ items: [] }))).items.slice(0, 4).map((h) => h.title);
+        return ai(
+          `حلل إشارة الاختراق هذي في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع السوق العام، أي الأهداف الخمسة تبدو واقعية مع المقاومات في الطريق، المخاطر (المسافة للوقف، أي خبر مهم)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}\n\nآخر عناوين أخبار السهم (بالإنجليزي):\n${heads.join("\n") || "لا توجد"}\n\nحالة السوق:\n${market ? snapshotText(market) : "غير متاحة"}`,
+          2500,
+        ).catch(() => null);
+      }),
+    );
+    for (const [k, r] of fresh.entries()) {
+      const note = notes[k];
       await send(entryMessage(r, { market, note }), { symbol: r.symbol, name: "" });
       state.watched[r.code] = { symbol: r.symbol, en: r.en, since: Date.now(), close: r.price, level: r.breakout?.level ?? null, stop: r.plan?.stop ?? null };
       follow(r);
@@ -227,6 +239,8 @@ export const checkTrades = () =>
     (t) => getCandles(t.symbol, "1D", 3).then((r) => trades.fromBar(t, (r.candles || []).at(-1))),
     (text, t) => send(text, { symbol: t.symbol, name: "" }),
   );
+// over the buy zone by more than 3%
+export const chased = (r) => !!r.plan && (r.price - r.plan.entryZone.to) / r.plan.entryZone.to > 0.03;
 // what a near signal still lacks, in words
 function missing(r) {
   const m = [];
@@ -248,7 +262,8 @@ const ASK = {
 };
 export async function brief(kind = "pre") {
   const snap = await snapshot();
-  const sig = state.lastEntries.length ? `إشارات الدخول في آخر مسح: ${state.lastEntries.join("، ")}` : "لا توجد إشارات دخول في آخر مسح.";
+  const ch = state.chased?.[ny().date] || [];
+  const sig = (state.lastEntries.length ? `إشارات الدخول في آخر مسح: ${state.lastEntries.join("، ")}` : "لا توجد إشارات دخول في آخر مسح.") + (ch.length ? `\nإشارات ما أُرسلت لأن السعر كان طالع فوق منطقة الشراء بأكثر من 3%: ${ch.join("، ")}` : "");
   const near = state.near.length ? `أقرب الأسهم للإشارة:\n${state.near.map((r) => `${r.code} (${r.en}) ${usd(r.price)}: ينقصه ${r.why || "—"}`).join("\n")}` : "";
   const facts = `${snapshotText(snap)}\n\n${sig}\n${near}\n\nعناوين أخبار السوق (بالإنجليزي):\n${snap.headlines.join("\n") || "لا توجد"}`;
   const note = await ai(`${ASK[kind]}\n\nالمعطيات:\n${facts}`, 3000);
@@ -303,9 +318,11 @@ export async function newsCheck() {
       delete state.watched[code];
       continue;
     }
+    if (cfg.light && w.newsDay === ny().date) continue;
     const items = (await newsOf(w.symbol).catch(() => ({ items: [] }))).items.filter((h) => h.url && !state.newsSeen[h.url] && (h.time || Date.now()) >= w.since - 86400e3).slice(0, 3);
     if (!items.length) continue;
     for (const h of items) state.newsSeen[h.url] = Date.now();
+    w.newsDay = ny().date;
     const ar = await ai(`ترجم هذه الأخبار عن سهم ${code} (${w.en}) للعربي، ولكل خبر سطرين: العنوان مترجم، ثم خلاصة قصيرة وهل يبدو إيجابي أو سلبي أو محايد للسهم وليش. لا تضف معلومات غير موجودة.\n\n${items.map((h, k) => `${k + 1}. ${h.title}\n${h.summary || ""}\n(${h.source || ""})`).join("\n\n")}`, 2500);
     await send([`📰 أخبار ${code} (${w.en})`, ar || items.map((h) => `• ${h.title}`).join("\n"), items.map((h) => h.url).join("\n")].join("\n\n"), { symbol: w.symbol, name: "" });
     sent += items.length;

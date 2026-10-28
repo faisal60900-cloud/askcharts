@@ -82,7 +82,8 @@ export function scanRow(stock, bars, now = Date.now(), { market = "kw" } = {}) {
   // "no liquidity" everywhere: read the last completed session instead, and say so.
   const vols = bars.slice(-21, -1).map((b) => b.volume || 0);
   const avg = vols.reduce((a, v) => a + v, 0) / Math.max(1, vols.length);
-  const early = avg > 0 && (bars.at(-1).volume || 0) < avg * 0.1;
+  // (New York trades 3% of a day's volume in its first few minutes, so it is read from then on)
+  const early = avg > 0 && (bars.at(-1).volume || 0) < avg * (market === "us" ? 0.03 : 0.1);
   if (early) bars = bars.slice(0, -1);
   const r = readMarket({ "1D": bars }, { main: "1D", symbol: stock.symbol, sessionFraction: early || !now ? 1 : (SESSION[market] || kuwaitSessionFraction)(bars.at(-1).time, now) });
   if (r.error) return { ...stock, error: r.error };
