@@ -338,7 +338,9 @@ export async function preview(code) {
   const sym = `US:${String(code || "").toUpperCase().replace(/[^A-Z.]/g, "")}`;
   const r = scanRow({ code: sym.slice(3), symbol: sym, en: sym.slice(3), ar: null }, (await getCandles(sym, "1D", 300)).candles || [], Date.now(), { market: "us" });
   if (r.error) return { error: r.error };
-  return { entry: r.entry, text: entryMessage(r, { market: await snapshot().catch(() => null) }) };
+  const text = entryMessage(r, { market: await snapshot().catch(() => null) });
+  // only a stock that meets every condition is called a buy signal
+  return { entry: r.entry, text: r.entry ? text : text.replace(/^🟢🇺🇸 إشارة شراء — (.*)$/m, "📊🇺🇸 قراءة $1 — ما فيه إشارة شراء الحين، والأرقام تحت للمعلومة") };
 }
 
 export async function aiTest() {
