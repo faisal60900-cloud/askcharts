@@ -46,3 +46,10 @@ test("the buy message has the zone, the stop, the trailing stop and the risk not
   );
   for (const part of ["إشارة شراء", "الراجحي", "60.4 ريال", "58.9 ريال", "وقف متحرك", "63.5 ريال", "650 مليون", "صاعد", "لا تضمن الربح"]) assert.ok(t.includes(part), part);
 });
+
+test("the market's turn is sent once, when it crosses the 200-day average", () => {
+  assert.equal(S.regimeMessage({ up200: true, from200: 1.2 }, null), null, "the first look only notes it");
+  assert.equal(S.regimeMessage({ up200: false, from200: -3 }, false), null, "no change");
+  assert.match(S.regimeMessage({ up200: true, from200: 1.2 }, false), /رجع فوق متوسط 200/);
+  assert.match(S.regimeMessage({ up200: false, from200: -0.5 }, true), /نزل تحت متوسط 200/);
+});

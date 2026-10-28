@@ -463,10 +463,12 @@ async function handle(req, res) {
       if (req.method === "POST") return send(res, 200, sawatch.update(await readBody(req, 1e4)));
     }
     if (p === "/api/sawatch/run" && req.method === "POST") return send(res, 200, await sawatch.runOnce());
+    if (p === "/api/sawatch/regime" && req.method === "POST") return send(res, 200, await sawatch.regimeCheck());
     if (p === "/api/sawatch/close" && req.method === "POST") return send(res, 200, await sawatch.closeBrief());
     if (p === "/api/trades") return send(res, 200, { open: trades.list(), closed: trades.closed().slice(0, 50) });
     if (p === "/api/trades/check" && req.method === "POST") return send(res, 200, { us: await uswatch.checkTrades(), kw: await kwwatch.checkTrades(), sa: await sawatch.checkTrades() });
     // ---------- the Kuwait entry signal tested on the market's history ----------
+    if (p === "/api/research/dump" && req.method === "POST") return send(res, 200, await kwbacktest.dump(await readBody(req, 1e3)));
     if (p === "/api/kwbacktest") {
       if (req.method === "GET") return send(res, 200, kwbacktest.status(["us", "sa"].includes(q.market) ? q.market : "kw"));
       if (req.method === "POST") return send(res, 200, kwbacktest.start(await readBody(req, 1e3)));

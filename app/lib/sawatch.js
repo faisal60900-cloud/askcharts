@@ -14,9 +14,9 @@ import { scanRow, SA_ENTRY_RULES, FILTERS, SA_TRAIL_ATR } from "../public/lib/ku
 import { equalIndex } from "../public/lib/kuwait-backtest.js";
 import { ema } from "../public/lib/indicators.js";
 
-const DEFAULTS = { on: false, every: 5, minValue: 5e6, ai: true, briefs: true };
+const DEFAULTS = { on: false, every: 5, minValue: 5e6, ai: true, briefs: true, regime: true };
 let cfg = { ...DEFAULTS, ...store.read("sawatch", {}) };
-let state = { sent: {}, lastRun: null, lastEntries: [], near: [], lastError: null, closeFor: null, market: null, ...store.read("sawatch-state", {}) };
+let state = { sent: {}, lastRun: null, lastEntries: [], near: [], lastError: null, closeFor: null, market: null, regimeFor: null, regimeUp: null, ...store.read("sawatch-state", {}) };
 const saveState = () => store.write("sawatch-state", state);
 let timer = null,
   tradesTimer = null,
@@ -36,7 +36,7 @@ export const settings = () => ({ ...cfg, telegram: kwwatch.settings().telegram, 
 
 export function update(patch = {}) {
   const next = { ...cfg };
-  for (const k of ["on", "ai", "briefs"]) if (k in patch) next[k] = !!patch[k];
+  for (const k of ["on", "ai", "briefs", "regime"]) if (k in patch) next[k] = !!patch[k];
   if ("every" in patch) next.every = Math.min(60, Math.max(5, Number(patch.every) || 5));
   if ("minValue" in patch) next.minValue = Math.max(0, Number(patch.minValue) || 0);
   cfg = next;
@@ -62,7 +62,9 @@ const mil = (v) => (v >= 1e9 ? `${n2(v / 1e9, 2)} مليار` : `${n2(v / 1e6, 1
 export function marketOf(barsList) {
   const idx = equalIndex(barsList);
   if (idx.length < 60) return null;
-  const e = ema(idx.map((b) => b.close), 50);
+  const closes = idx.map((b) => b.close);
+  const e = ema(closes, 50);
+  const sma200 = closes.length >= 200 ? closes.slice(-200).reduce((a, v) => a + v, 0) / 200 : null;
   const last = idx.at(-1),
     prev = idx.at(-2);
   let up = 0,
@@ -73,7 +75,7 @@ export function marketOf(barsList) {
     if (l.close > p.close) up++;
     else if (l.close < p.close) down++;
   }
-  return { up: last.close > e.at(-1), change: ((last.close - prev.close) / prev.close) * 100, rising: up, falling: down };
+  return { up: last.close > e.at(-1), up200: sma200 ? last.close > sma200 : null, from200: sma200 ? ((last.close - sma200) / sma200) * 100 : null, change: ((last.close - prev.close) / prev.close) * 100, rising: up, falling: down };
 }
 
 export function track() {
@@ -124,6 +126,37 @@ function missing(r) {
   else if (!r.breakout.confirmed) m.push("الاختراق بدون سيولة كافية");
   for (const k of SA_ENTRY_RULES) if (k !== "breakout" && !FILTERS[k].test(r)) m.push(FILTERS[k].ar);
   return [...new Set(m)].join("، ");
+}
+
+// The market's turn: tested from 2022, no way of buying Saudi stocks made money in 2025-2026 (the
+// market fell), so the buy alerts stay off; what is worth a message is the market turning up again
+// (the equal-weighted index back over its 200-day average), or down.
+export function regimeMessage(m, wasUp) {
+  if (m?.up200 == null || wasUp == null || m.up200 === wasUp) return null;
+  return m.up200
+    ? `📈🇸🇦 السوق السعودي رجع فوق متوسط 200 يوم (${pct(m.from200)} فوقه)\nهذي أول علامة إن الاتجاه النازل ممكن ينتهي. في فترات الصعود (2022–2024) كانت اختراقات القمم تربح، فنقدر نرجع نختبر ونشغل توصيات السعودية. ما زالت علامة مبكرة، ويمكن يرجع ينزل تحت المتوسط.`
+    : `📉🇸🇦 السوق السعودي نزل تحت متوسط 200 يوم (${pct(m.from200)})\nالاتجاه العام صار نازل: تاريخيًا أغلب صفقات الشراء القصيرة خسرت في هالحالة. الحذر أولى.`;
+}
+export async function regimeCheck() {
+  const bars = [];
+  let i = 0;
+  const worker = async () => {
+    while (i < SAUDI_STOCKS.length) {
+      const s = SAUDI_STOCKS[i++];
+      const r = await getCandles(s.symbol, "1D", 300).catch(() => null);
+      if (r?.candles?.length > 60) bars.push(r.candles);
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  const m = marketOf(bars);
+  if (!m) return { sent: false };
+  state.market = m;
+  const text = regimeMessage(m, state.regimeUp);
+  if (text) await send(text);
+  state.regimeUp = m.up200;
+  state.regimeFor = riyadh().date;
+  saveState();
+  return { sent: !!text, up200: m.up200, from200: m.from200 };
 }
 
 export async function runOnce({ force = false } = {}) {
@@ -198,8 +231,10 @@ export async function closeBrief() {
 }
 
 async function tick() {
-  if (!cfg.on) return;
   const m = riyadh();
+  // once a day after the close, even with the buy alerts off
+  if (cfg.regime && closeWindow(m) && state.regimeFor !== m.date) await regimeCheck().catch((e) => (state.lastError = e.message));
+  if (!cfg.on) return;
   try {
     if (sessionOpen(m)) await runOnce();
     else if (closeWindow(m) && state.closeFor !== m.date) {
@@ -215,7 +250,7 @@ async function tick() {
 function schedule() {
   clearInterval(timer);
   clearInterval(tradesTimer);
-  if (!cfg.on) return;
+  if (!cfg.on && !cfg.regime) return;
   let last = 0;
   // every minute, a scan when its time has come
   timer = setInterval(() => {

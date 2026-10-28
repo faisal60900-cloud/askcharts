@@ -316,12 +316,12 @@ export function renderKwScan(box, app, market = "kw") {
     el.innerHTML = `<div class="row-flex">
       <button class="btn ${w.on ? "primary" : ""}" id="saOn">${w.on ? "🔔 مراقبة السعودية شغالة" : "🔕 شغّل مراقبة السعودية"}</button>
       <label class="field">مسح كل<select id="saEvery">${[5, 10, 15, 30].map((m) => `<option value="${m}" ${m === w.every ? "selected" : ""}>${m} دقيقة</option>`).join("")}</select></label>
-      ${chip("briefs", "ملخص الإغلاق")}${chip("ai", "تحليل Claude")}
+      ${chip("regime", "نبهني إذا تغير اتجاه السوق")}${chip("briefs", "ملخص الإغلاق")}${chip("ai", "تحليل Claude")}
       <button class="btn" data-sanow="run">افحص الآن وأرسل</button>
       <button class="btn" data-sanow="close">أرسل ملخص الإغلاق الآن</button>
     </div>
-    <div class="hint-text">${w.telegram ? "📱 يرسل على تيليجرام" : '<span class="down">تيليجرام مو مربوط: اربطه من تبويب ماسح الكويت ← 📱 للجوال</span>'} · السوق الحين ${w.sessionOpen ? '<b class="up">مفتوح</b>' : "مغلق"} · آخر مسح ${when}${w.market ? ` · السوق العام ${w.market.up ? '<b class="up">صاعد</b>' : '<b class="down">تحت متوسط 50</b>'}` : ""}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.trades?.length ? ` · صفقات تحت المتابعة: ${w.trades.map((t) => esc(t.code)).join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}<br>
-    يمسح من الأحد للخميس 10:00–3:10 العصر، ويتابع كل إشارة (المقاومات والوقف المتحرك)، وملخص الإغلاق 3:20 العصر.${w.near?.length ? `<br>أقرب الأسهم للإشارة: ${w.near.map((r) => `<b>${esc(r.code)} ${esc(r.ar)}</b> (ينقصه ${esc(r.why)})`).join(" · ")}` : ""}</div>`;
+    <div class="hint-text">${w.telegram ? "📱 يرسل على تيليجرام" : '<span class="down">تيليجرام مو مربوط: اربطه من تبويب ماسح الكويت ← 📱 للجوال</span>'} · السوق الحين ${w.sessionOpen ? '<b class="up">مفتوح</b>' : "مغلق"} · آخر مسح ${when}${w.market ? ` · السوق العام ${w.market.up ? '<b class="up">فوق متوسط 50</b>' : '<b class="down">تحت متوسط 50</b>'}${w.market.up200 != null ? ` و${w.market.up200 ? '<b class="up">فوق</b>' : '<b class="down">تحت</b>'} متوسط 200` : ""}` : ""}${w.lastEntries?.length ? ` · الإشارات: ${w.lastEntries.join("، ")}` : ""}${w.trades?.length ? ` · صفقات تحت المتابعة: ${w.trades.map((t) => esc(t.code)).join("، ")}` : ""}${w.lastError ? ` · <span class="down">${esc(w.lastError)}</span>` : ""}<br>
+    ⚠️ اختبرت عدة طرق شراء على السوق السعودي من 2022: كلها خسرت في 2025–2026 لأن السوق نازل، فإشارات الشراء التلقائية مطفأة. «نبهني إذا تغير اتجاه السوق» يرسل لك على تيليجرام لما يرجع السوق فوق متوسط 200 يوم (أو ينزل تحته).<br>إذا شغلت المراقبة: يمسح من الأحد للخميس 10:00–3:10 العصر، ويتابع كل إشارة (المقاومات والوقف المتحرك)، وملخص الإغلاق 3:20 العصر.${w.near?.length ? `<br>أقرب الأسهم للإشارة: ${w.near.map((r) => `<b>${esc(r.code)} ${esc(r.ar)}</b> (ينقصه ${esc(r.why)})`).join(" · ")}` : ""}</div>`;
     const post = async (patch) => {
       try {
         await api.post("/api/sawatch", { minValue: st.minValue, ...patch });

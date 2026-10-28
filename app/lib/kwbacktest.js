@@ -4,6 +4,9 @@
 // result, which is kept in the data folder.
 import { getCandles, nasdaqScreener } from "./providers.js";
 import * as store from "./store.js";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
 import { SAUDI_STOCKS } from "../public/lib/saudi-market.js";
 import { signalsFor, compare, equalIndex, VARIANTS, VARIANTS_US, VARIANTS_SA, LIVE } from "../public/lib/kuwait-backtest.js";
@@ -81,4 +84,25 @@ export function start({ market = "kw", limit = 1500, size = 300 } = {}) {
     .catch((e) => (jobs[market] = { ...job, error: e.message }))
     .finally(() => (running[market] = false));
   return status(market);
+}
+
+// For research: every stock's daily bars of a market, written to app/research/<market>-bars.json
+// (compact: [time, open, high, low, close, volume] rows).
+export async function dump({ market = "sa", limit = 1500 } = {}) {
+  const list = market === "sa" ? SAUDI_STOCKS : market === "kw" ? KUWAIT_STOCKS : await usList(300);
+  const out = {};
+  let i = 0;
+  const worker = async () => {
+    while (i < list.length) {
+      const s = list[i++];
+      const bars = (await getCandles(s.symbol, "1D", limit).catch(() => ({ candles: [] }))).candles || [];
+      if (bars.length) out[s.code] = { ...s, bars: bars.map((b) => [b.time, b.open, b.high, b.low, b.close, b.volume || 0]) };
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "research");
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `${market}-bars.json`);
+  fs.writeFileSync(file, JSON.stringify(out));
+  return { file, stocks: Object.keys(out).length };
 }
