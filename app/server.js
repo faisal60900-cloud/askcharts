@@ -42,7 +42,10 @@ const CUSTOM = process.env.QT_CUSTOM_DIR || path.join(ROOT, "custom");
 const VERSION = JSON.parse(
   fs.readFileSync(path.join(ROOT, "package.json"), "utf8"),
 ).version;
-const HOST = process.env.HOST || "127.0.0.1";
+// "Open on my home network" (data/lan.json): listen on every address, so a phone on the same Wi-Fi
+// can open it; requests still have to name one of this computer's own addresses (allowed()).
+const LAN = !!store.read("lan", { on: false }).on;
+const HOST = LAN ? "0.0.0.0" : process.env.HOST || "127.0.0.1";
 // started by AskCharts' runner (run.mjs): stop with it, even if it's killed outright, so a leftover
 // never holds the port or writes your data alongside a new one
 if (process.send) process.on("disconnect", () => process.exit(0));
@@ -443,6 +446,20 @@ async function handle(req, res) {
     }
     // Restart the app after an update to its files: AskCharts' runner starts it again two seconds
     // after it exits (as after a crash), so no computer restart is needed.
+    if (p === "/api/lan") {
+      if (req.method === "POST") {
+        const on = !!(await readBody(req, 1e3)).on;
+        store.write("lan", { on });
+        send(res, 200, { on, note: "restarting" });
+        setTimeout(() => process.exit(3), 300);
+        return;
+      }
+      const ips = Object.values(os.networkInterfaces())
+        .flat()
+        .filter((i) => i && i.family === "IPv4" && !i.internal)
+        .map((i) => i.address);
+      return send(res, 200, { on: LAN, port: Number(req.headers.host?.split(":")[1]) || START_PORT, addresses: LAN ? ips : [] });
+    }
     if (p === "/api/restart" && req.method === "POST") {
       send(res, 200, { ok: true, note: "restarting" });
       setTimeout(() => process.exit(3), 300);
