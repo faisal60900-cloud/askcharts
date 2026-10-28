@@ -40,3 +40,13 @@ test("short names people use", () => {
   assert.equal(f("اجيليتي"), "kw:MKHZN");
   assert.equal(f("سالك"), "ae:SALIK");
 });
+
+test("the buying and selling lines: today's quantities and values, the period, the big days", () => {
+  const t = B.flowText(
+    "kw",
+    {},
+    { trades: { period: { bars: 20, buyPct: 62, buyValue: 5e9, sellValue: 3e9 }, big: [{ time: 1793000000, kind: "buy", rel: 2.6 }] }, flow: { inflowPct: 58, outflowPct: 42, net: 2e9, improving: true } },
+    { volume: 1e6, buyPct: 70, buyValue: 5e8, sellValue: 2e8 },
+  );
+  for (const part of ["كمية الشراء 700 ألف سهم (70%)", "كمية البيع 300 ألف سهم (30%)", "قيمة الشراء 500 ألف د.ك", "🟢 +300 ألف د.ك", "آخر 20 جلسة", "🐋", "شراء قوي", "2.6x"]) assert.ok(t.includes(part), part);
+});
