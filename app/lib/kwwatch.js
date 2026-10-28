@@ -9,8 +9,9 @@ import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
 import { scanRow } from "../public/lib/kuwait-scan.js";
 import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
+import * as prealert from "./prealert.js";
 
-const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "", tgToken: "", tgChat: "", tgBot: "" };
+const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "", tgToken: "", tgChat: "", tgBot: "", prealerts: true };
 let cfg = { ...DEFAULTS, ...store.read("kwwatch", {}) };
 let state = store.read("kwwatch-state", { sent: {}, lastRun: null, lastEntries: [], lastError: null });
 let timer = null,
@@ -172,6 +173,7 @@ export function update(patch = {}) {
   if ("every" in patch) next.every = Math.min(60, Math.max(5, Number(patch.every) || 15));
   if ("minValue" in patch) next.minValue = Math.max(0, Number(patch.minValue) || 0);
   if ("afterClose" in patch) next.afterClose = !!patch.afterClose;
+  if ("prealerts" in patch) next.prealerts = !!patch.prealerts;
   if ("waPhone" in patch) {
     const ph = String(patch.waPhone || "").replace(/[\s-]/g, "");
     if (ph && !/^\+\d{8,15}$/.test(ph)) throw Object.assign(new Error("اكتب الرقم مع رمز الدولة، مثل +96550000000"), { status: 400 });
@@ -264,6 +266,16 @@ export async function runOnce({ force = false } = {}) {
     // forget sent keys after four days
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 4 * 86400e3) delete state.sent[k];
     state.lastRun = new Date().toISOString();
+    if (cfg.prealerts && sessionOpen())
+      await prealert.sendNew(rows, "kw", {
+        minValue: cfg.minValue,
+        date: today,
+        sent: (state.pre ||= {}),
+        send: async (text) => {
+          await alerts.notify({ symbol: "", name: "", text, notify: { toast: true, sound: false, desktop: true } });
+          if (cfg.tgToken && cfg.tgChat) await sendTelegram(text, "kw").catch(() => {});
+        },
+      });
     state.lastEntries = entries.map((r) => r.code);
     state.lastError = limited ? "Yahoo حدّ الطلبات، اكتمل جزء من المسح" : rows.length ? null : "ما وصلت بيانات";
     store.write("kwwatch-state", state);

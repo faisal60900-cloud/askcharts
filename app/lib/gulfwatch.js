@@ -10,6 +10,7 @@ import * as alerts from "./alerts.js";
 import * as kwwatch from "./kwwatch.js";
 import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
+import * as prealert from "./prealert.js";
 import { addFlow } from "./uswatch.js";
 import { write, ANALYST } from "./ai-write.js";
 import { scanRow, FILTERS, entryRules, TRAILS } from "../public/lib/kuwait-scan.js";
@@ -46,7 +47,7 @@ export function marketOf(barsList) {
 export function createWatch(M) {
 const RULES = entryRules(M.market),
   TRAIL = TRAILS[M.market] || 2.5;
-const DEFAULTS = { on: false, every: 5, minValue: M.minValue, ai: true, briefs: true, regime: true };
+const DEFAULTS = { on: false, every: 5, minValue: M.minValue, ai: true, briefs: true, regime: true, prealerts: true };
 let cfg = { ...DEFAULTS, ...store.read(`${M.market}watch`, {}) };
 let state = { sent: {}, lastRun: null, lastEntries: [], near: [], lastError: null, closeFor: null, market: null, regimeFor: null, regimeUp: null, ...store.read(`${M.market}watch-state`, {}) };
 const saveState = () => store.write(`${M.market}watch-state`, state);
@@ -68,7 +69,7 @@ const settings = () => ({ ...cfg, telegram: kwwatch.settings().telegram, session
 
 function update(patch = {}) {
   const next = { ...cfg };
-  for (const k of ["on", "ai", "briefs", "regime"]) if (k in patch) next[k] = !!patch[k];
+  for (const k of ["on", "ai", "briefs", "regime", "prealerts"]) if (k in patch) next[k] = !!patch[k];
   if ("every" in patch) next.every = Math.min(60, Math.max(5, Number(patch.every) || 5));
   if ("minValue" in patch) next.minValue = Math.max(0, Number(patch.minValue) || 0);
   cfg = next;
@@ -203,6 +204,7 @@ async function runOnce({ force = false } = {}) {
     }
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 5 * 86400e3) delete state.sent[k];
     state.lastRun = new Date().toISOString();
+    if (cfg.prealerts && sessionOpen()) await prealert.sendNew(ok, M.market, { minValue: cfg.minValue, date, sent: (state.pre ||= {}), send: (text, r) => send(text, r.symbol) });
     state.lastEntries = entries.map((r) => r.code);
     state.near = ok
       .filter((r) => !r.entry && (r.value ?? 0) >= cfg.minValue)

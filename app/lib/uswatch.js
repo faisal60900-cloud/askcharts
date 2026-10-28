@@ -14,9 +14,10 @@ import { scanRow, US_TARGETS_R } from "../public/lib/kuwait-scan.js";
 import { ema } from "../public/lib/indicators.js";
 import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
+import * as prealert from "./prealert.js";
 
 // light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
-const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true };
+const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true, prealerts: true };
 let cfg = { ...DEFAULTS, ...store.read("uswatch", {}) };
 let state = { sent: {}, newsSeen: {}, watched: {}, briefs: {}, lastRun: null, lastScanAt: 0, lastNewsAt: 0, lastEntries: [], near: [], lastError: null, ...store.read("uswatch-state", {}) };
 const saveState = () => store.write("uswatch-state", state);
@@ -49,7 +50,7 @@ export const settings = () => ({ ...cfg, aiError: aiw.lastError, ny: ny(), teleg
 
 export function update(patch = {}) {
   const next = { ...cfg };
-  for (const k of ["on", "news", "briefs", "ai", "light"]) if (k in patch) next[k] = !!patch[k];
+  for (const k of ["on", "news", "briefs", "ai", "light", "prealerts"]) if (k in patch) next[k] = !!patch[k];
   if ("every" in patch) next.every = Math.min(60, Math.max(5, Number(patch.every) || 15));
   if ("size" in patch) next.size = [100, 300, 500, 1000].includes(Number(patch.size)) ? Number(patch.size) : 300;
   if ("minValue" in patch) next.minValue = Math.max(0, Number(patch.minValue) || 0);
@@ -206,6 +207,10 @@ export async function runOnce({ force = false } = {}) {
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 5 * 86400e3) delete state.sent[k];
     state.lastRun = new Date().toISOString();
     state.lastScanAt = Date.now();
+    // 👀 the warnings before a breakout, in the session only
+    const t = ny();
+    if (cfg.prealerts && t.weekday && t.min >= 9 * 60 + 30 && t.min < 16 * 60)
+      await prealert.sendNew(ok, "us", { minValue: cfg.minValue, date, sent: (state.pre ||= {}), send: (text, r) => send(text, { symbol: r.symbol, name: "" }) });
     state.lastEntries = entries.map((r) => r.code);
     // the stocks to look at before tomorrow's open: near a breakout or just through one
     state.radar = ok
