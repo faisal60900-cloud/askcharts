@@ -12,6 +12,7 @@ import { write, ANALYST } from "./ai-write.js";
 import * as aiw from "./ai-write.js";
 import { scanRow, US_TARGETS_R } from "../public/lib/kuwait-scan.js";
 import { ema } from "../public/lib/indicators.js";
+import * as trades from "./trades.js";
 
 const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true };
 let cfg = { ...DEFAULTS, ...store.read("uswatch", {}) };
@@ -42,7 +43,7 @@ export function due(m, flags = {}) {
   };
 }
 
-export const settings = () => ({ ...cfg, aiError: aiw.lastError, ny: ny(), telegram: kwwatch.settings().telegram, lastRun: state.lastRun, lastEntries: state.lastEntries, near: state.near, lastError: state.lastError, watched: Object.keys(state.watched), briefsToday: state.briefs[ny().date] || {} });
+export const settings = () => ({ ...cfg, aiError: aiw.lastError, ny: ny(), telegram: kwwatch.settings().telegram, lastRun: state.lastRun, lastEntries: state.lastEntries, near: state.near, lastError: state.lastError, watched: Object.keys(state.watched), trades: trades.list("us"), briefsToday: state.briefs[ny().date] || {} });
 
 export function update(patch = {}) {
   const next = { ...cfg };
@@ -164,7 +165,7 @@ export async function runOnce({ force = false } = {}) {
         const s = list[i++];
         try {
           const r = await getCandles(s.symbol, "1D", 300);
-          rows.push(scanRow(s, r.candles || [], Date.now(), { market: "us" }));
+          rows.push({ ...scanRow(s, r.candles || [], Date.now(), { market: "us" }), bar: (r.candles || []).at(-1) });
         } catch (e) {
           if (/rate limit/i.test(e.message)) limited = true;
         }
@@ -185,6 +186,7 @@ export async function runOnce({ force = false } = {}) {
       );
       await send(entryMessage(r, { market, note }), { symbol: r.symbol, name: "" });
       state.watched[r.code] = { symbol: r.symbol, en: r.en, since: Date.now(), close: r.price, level: r.breakout?.level ?? null, stop: r.plan?.stop ?? null };
+      follow(r);
     }
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 5 * 86400e3) delete state.sent[k];
     state.lastRun = new Date().toISOString();
@@ -208,6 +210,22 @@ export async function runOnce({ force = false } = {}) {
     busy = false;
   }
 }
+// Follow a signal's five targets and its stop from now on (lib/trades.js), with the same entry,
+// stop and targets the message gave.
+export function follow(r) {
+  const p = r.plan;
+  if (!p) return false;
+  const entry = (p.entryZone.from + p.entryZone.to) / 2,
+    R = entry - p.stop;
+  if (!(R > 0)) return false;
+  return trades.open(trades.newTrade({ market: "us", code: r.code, symbol: r.symbol, name: r.en, entry, stop: p.stop, targets: US_TARGETS_R.map((m) => entry + R * m), price: r.price, bar: r.bar }));
+}
+export const checkTrades = () =>
+  trades.check(
+    "us",
+    (t) => getCandles(t.symbol, "1D", 3).then((r) => trades.fromBar(t, (r.candles || []).at(-1))),
+    (text, t) => send(text, { symbol: t.symbol, name: "" }),
+  );
 // what a near signal still lacks, in words
 function missing(r) {
   const m = [];
@@ -233,7 +251,8 @@ export async function brief(kind = "pre") {
   const near = state.near.length ? `أقرب الأسهم للإشارة:\n${state.near.map((r) => `${r.code} (${r.en}) ${usd(r.price)}: ينقصه ${r.why || "—"}`).join("\n")}` : "";
   const facts = `${snapshotText(snap)}\n\n${sig}\n${near}\n\nعناوين أخبار السوق (بالإنجليزي):\n${snap.headlines.join("\n") || "لا توجد"}`;
   const note = await ai(`${ASK[kind]}\n\nالمعطيات:\n${facts}`, 3000);
-  const text = [TITLES[kind], snapshotText(snap), note ? `🧠 قراءة المحلل:\n${note}` : `${sig}${near ? `\n${near}` : ""}`, snap.spy && !snap.spy.up ? "⚠️ السوق تحت متوسط 50 يوم: إشارات الاختراق تاريخيًا أضعف في هالحالة." : "", "قراءة فنية للمعلومة، وليست توصية."]
+  const open = trades.summary("us");
+  const text = [TITLES[kind], snapshotText(snap), note ? `🧠 قراءة المحلل:\n${note}` : `${sig}${near ? `\n${near}` : ""}`, open ? `📂 الصفقات المفتوحة:\n${open}` : "", snap.spy && !snap.spy.up ? "⚠️ السوق تحت متوسط 50 يوم: إشارات الاختراق تاريخيًا أضعف في هالحالة." : "", "قراءة فنية للمعلومة، وليست توصية."]
     .filter(Boolean)
     .join("\n\n");
   await send(text, { name: "" });
@@ -331,6 +350,11 @@ async function tick() {
       (state.briefs[m.date] ||= {}).radar = Date.now();
       saveState();
       await radar();
+    }
+    // the open trades: every 2 minutes in the session, and once more after the close
+    if ((mk.open || d.close) && Date.now() - (state.lastTradesAt || 0) >= 2 * 60e3 && trades.list("us").length) {
+      state.lastTradesAt = Date.now();
+      await checkTrades();
     }
     if (mk.open && Date.now() - state.lastScanAt >= (d.fast ? 5 : cfg.every) * 60e3) await runOnce();
     if (cfg.briefs && d.open && state.lastScanAt > Date.now() - 20 * 60e3) await brief("open");

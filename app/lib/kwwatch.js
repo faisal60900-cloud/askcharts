@@ -7,6 +7,7 @@ import * as store from "./store.js";
 import * as alerts from "./alerts.js";
 import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
 import { scanRow } from "../public/lib/kuwait-scan.js";
+import * as trades from "./trades.js";
 
 const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "", tgToken: "", tgChat: "", tgBot: "" };
 let cfg = { ...DEFAULTS, ...store.read("kwwatch", {}) };
@@ -173,7 +174,7 @@ export async function runOnce({ force = false } = {}) {
         const s = KUWAIT_STOCKS[i++];
         try {
           const r = await getCandles(s.symbol, "1D", 300);
-          rows.push(scanRow(s, r.candles || []));
+          rows.push({ ...scanRow(s, r.candles || []), bar: (r.candles || []).at(-1) });
         } catch (e) {
           if (/rate limit/i.test(e.message)) limited = true;
         }
@@ -194,6 +195,7 @@ export async function runOnce({ force = false } = {}) {
       await alerts.notify({ symbol: r.symbol, name: "إشارة دخول فنية", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
       if (cfg.tgToken && cfg.tgChat) await sendTelegram(`🔔 إشارة دخول فنية\n${text}`).catch(() => {});
       if (cfg.waPhone && cfg.waKey) await sendWhatsApp(`🔔 إشارة دخول فنية\n${text}`).catch(() => {});
+      follow(r);
     }
     // forget sent keys after four days
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 4 * 86400e3) delete state.sent[k];
@@ -204,6 +206,32 @@ export async function runOnce({ force = false } = {}) {
     return { scanned: rows.length, entries: entries.length, sent: fresh.length, limited };
   })().finally(() => (running = null));
   return running;
+}
+
+// Follow a signal from now on: its resistances and the trailing stop (lib/trades.js).
+export function follow(r) {
+  const p = r.plan;
+  if (!p) return false;
+  const entry = (p.entryZone.from + p.entryZone.to) / 2;
+  if (!(p.stop < entry)) return false;
+  const targets = (p.targets || []).map((t) => t.price).filter((v) => v > entry);
+  return trades.open(trades.newTrade({ market: "kw", code: r.code, symbol: r.symbol, name: r.ar || r.en, entry, stop: p.stop, targets, trailDist: r.trail?.dist ?? null, price: r.price, bar: r.bar }));
+}
+async function deliver(text) {
+  await alerts.notify({ symbol: "", name: "متابعة صفقة", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
+  if (cfg.tgToken && cfg.tgChat) await sendTelegram(text).catch(() => {});
+  if (cfg.waPhone && cfg.waKey) await sendWhatsApp(text).catch(() => {});
+}
+export const checkTrades = () => trades.check("kw", (t) => getCandles(t.symbol, "1D", 3).then((r) => trades.fromBar(t, (r.candles || []).at(-1))), deliver);
+// every 3 minutes in the session and the half hour after it
+let tradesTimer = null;
+function followTrades() {
+  clearInterval(tradesTimer);
+  if (!cfg.on) return;
+  tradesTimer = setInterval(() => {
+    if ((sessionOpen() || afterCloseWindow()) && trades.list("kw").length) checkTrades().catch(() => {});
+  }, 3 * 60e3);
+  tradesTimer.unref?.();
 }
 
 let closeDoneFor = null;
@@ -225,7 +253,11 @@ function schedule() {
     timer = setTimeout(tick, (retry ? 2 : sessionOpen() ? cfg.every : 5) * 60e3);
   };
   timer = setTimeout(tick, 5000);
+  followTrades();
 }
 
 export const start = () => schedule();
-export const stop = () => clearTimeout(timer);
+export const stop = () => {
+  clearTimeout(timer);
+  clearInterval(tradesTimer);
+};
