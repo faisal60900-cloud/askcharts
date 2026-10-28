@@ -12,7 +12,7 @@ const save = () => store.write(KEY, book);
 export const reset = (b = { open: {}, closed: [] }) => (book = b);
 
 // how many calendar days a signal is followed (60 sessions in New York, 40 in Kuwait)
-export const MAX_DAYS = { us: 90, kw: 60 };
+export const MAX_DAYS = { us: 90, kw: 60, sa: 60 };
 const r2 = (v) => Math.round(v * 100) / 100;
 
 // A new trade from a signal. Targets the price had already passed when the signal was sent count as
@@ -103,11 +103,13 @@ export function fromBar(t, bar) {
 }
 
 // ---------- messages ----------
+const FLAG = { us: "🇺🇸", kw: "🇰🇼", sa: "🇸🇦" };
+const moneyOf = (market, v) => (market === "us" ? `${n2(v)}$` : market === "sa" ? `${n2(v)} ريال` : n2(v));
 const n2 = (v) => (v == null || !Number.isFinite(v) ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: 3 }));
 const pct = (v) => `${v > 0 ? "+" : ""}${n2(r2(v))}%`;
 export function message(t, e) {
-  const money = (v) => (t.market === "us" ? `${n2(v)}$` : n2(v));
-  const head = `${t.market === "us" ? "🇺🇸" : "🇰🇼"} ${t.code}${t.name ? ` (${t.name})` : ""}`;
+  const money = (v) => moneyOf(t.market, v);
+  const head = `${FLAG[t.market] || ""} ${t.code}${t.name ? ` (${t.name})` : ""}`;
   const fromEntry = (px) => pct(((px - t.entry) / t.entry) * 100);
   const n = t.targets.length;
   if (e.kind === "target") {
@@ -170,7 +172,7 @@ export async function check(market, quote, send, now = Date.now()) {
 
 // one line per open trade, for the close brief
 export function summary(market) {
-  const money = (v) => (market === "us" ? `${n2(v)}$` : n2(v));
+  const money = (v) => moneyOf(market, v);
   return list(market)
     .map((t) => `• ${t.code}: ${money(t.last)} (${pct(((t.last - t.entry) / t.entry) * 100)} من الدخول) · ${t.hit ? `حقق ${t.hit} من ${t.targets.length}` : "ما وصل هدف بعد"} · الوقف ${money(t.stop)}`)
     .join("\n");

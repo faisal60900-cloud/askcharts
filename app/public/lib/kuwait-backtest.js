@@ -134,6 +134,48 @@ export const VARIANTS_US = {
   marketWeekly: { ar: "السوق صاعد + أسبوعي صاعد", test: (e) => e.marketUp && e.weekly > 0 },
 };
 
+// Saudi Arabia: Kuwait's sets and the US ones, with the whole market (an equal-weighted index of
+// the listed stocks, built by lib/kwbacktest.js) above its 50-day average.
+export const VARIANTS_SA = {
+  base: { ar: "الشروط الأساسية", test: () => true },
+  weeklyUp: { ar: "+ الاتجاه الأسبوعي صاعد", test: (e) => e.weekly > 0 },
+  rsiOk: { ar: "+ RSI بين 50 و70", test: (e) => e.rsi >= 50 && e.rsi < 70 },
+  vol2: { ar: "+ سيولة الاختراق 2x فأكثر", test: (e) => e.breakVol >= 2 },
+  strongClose: { ar: "+ إغلاق قرب قمة اليوم", test: (e) => e.closePos >= 0.7 },
+  aboveEma50: { ar: "+ السعر فوق متوسط 50", test: (e) => e.aboveEma50 },
+  marketUp: { ar: "+ السوق صاعد (فوق متوسط 50)", test: (e) => e.marketUp },
+  liquid: { ar: "+ تداول 10 ملايين ريال يوميًا فأكثر", test: (e) => e.value >= 10e6 },
+  combo: { ar: "الأسبوعي صاعد + RSI 50-70 + إغلاق قوي", test: (e) => e.weekly > 0 && e.rsi >= 50 && e.rsi < 70 && e.closePos >= 0.7 },
+  comboMarket: { ar: "السوق صاعد + الأسبوعي صاعد + RSI 50-70 + إغلاق قوي", test: (e) => e.marketUp && e.weekly > 0 && e.rsi >= 50 && e.rsi < 70 && e.closePos >= 0.7 },
+  comboVol: { ar: "الأسبوعي صاعد + سيولة 2x + إغلاق قوي", test: (e) => e.weekly > 0 && e.breakVol >= 2 && e.closePos >= 0.7 },
+  marketWeekly: { ar: "السوق صاعد + أسبوعي صاعد", test: (e) => e.marketUp && e.weekly > 0 },
+  marketVol2: { ar: "السوق صاعد + سيولة 2x", test: (e) => e.marketUp && e.breakVol >= 2 },
+};
+
+// An equal-weighted index from many stocks' daily bars: each day the average change of the stocks
+// that traded both that day and the one before, chained from 100. For a market without a usable
+// index feed (Yahoo's ^TASI.SR has no history).
+export function equalIndex(barsList) {
+  const day = (t) => new Date(t * 1000).toISOString().slice(0, 10);
+  const moves = new Map();
+  for (const bars of barsList)
+    for (let i = 1; i < bars.length; i++) {
+      const p = bars[i - 1].close,
+        c = bars[i].close;
+      if (!(p > 0) || !(c > 0) || Math.abs(c / p - 1) > 0.3) continue;
+      const d = day(bars[i].time);
+      const m = moves.get(d) || { t: bars[i].time, sum: 0, n: 0 };
+      m.sum += c / p - 1;
+      m.n++;
+      moves.set(d, m);
+    }
+  let level = 100;
+  return [...moves.values()]
+    .filter((m) => m.n >= 5)
+    .sort((a, b) => a.t - b.t)
+    .map((m) => ({ time: m.t, close: (level *= 1 + m.sum / m.n) }));
+}
+
 // A cheap test first: a confirmed breakout needs an up day on 1.3x volume within the last 3 bars.
 function maybe(bars, i, avgVol) {
   for (let j = i; j > i - 3 && j > 0; j--) if (bars[j].close > bars[j - 1].close && avgVol[j] > 0 && bars[j].volume >= avgVol[j] * 1.3) return true;

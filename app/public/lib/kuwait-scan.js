@@ -1,6 +1,6 @@
 // ماسح السوق الكويتي: one row per stock from its daily bars, read with the Market Reader, and the
 // filters the scan offers. Pure numbers in and out, so it can be tested without a page.
-import { readMarket, kuwaitSessionFraction, usSessionFraction, readTimeframe } from "./market-reader.js";
+import { readMarket, kuwaitSessionFraction, usSessionFraction, saudiSessionFraction, readTimeframe } from "./market-reader.js";
 import { resample } from "./series.js";
 
 // Average daily traded value over the last n sessions, in the stock's own money (Kuwaiti bars
@@ -47,7 +47,16 @@ export const US_TRAIL_ATR = 3;
 // trailing stop alone), for +0.8% a trade on average instead of +1.7%.
 export const US_TARGETS_R = [1, 2, 3, 4, 5];
 export const US_LIVE = { variant: "vol2", exit: "scale5" };
-export const entryRules = (market) => (market === "us" ? US_ENTRY_RULES : ENTRY_RULES);
+// Saudi Arabia (Tadawul), tested on the 221 main-market stocks from 2022 (lib/kwbacktest.js, market
+// "sa"): no rule set made money in 2025-2026 (the market fell), whichever the exit. Some did on
+// 2022-2024. Kuwait's rules are used here, and the scanner and alerts show that record as it is.
+export const SA_ENTRY_RULES = [...BASE_RULES, "weeklyUp", "rsiZone", "strongClose"];
+export const SA_TRAIL_ATR = 2.5;
+export const SA_LIVE = { variant: "combo", exit: "trail" };
+const RULES = { kw: ENTRY_RULES, us: US_ENTRY_RULES, sa: SA_ENTRY_RULES };
+export const TRAILS = { kw: TRAIL_ATR, us: US_TRAIL_ATR, sa: SA_TRAIL_ATR };
+const SESSION = { kw: kuwaitSessionFraction, us: usSessionFraction, sa: saudiSessionFraction };
+export const entryRules = (market) => RULES[market] || ENTRY_RULES;
 export const isEntry = (row, market = row?.market || "kw") => entryRules(market).every((k) => FILTERS[k].test(row));
 export const isBaseSignal = (row) => BASE_RULES.every((k) => FILTERS[k].test(row));
 
@@ -69,7 +78,7 @@ export function scanRow(stock, bars, now = Date.now(), { market = "kw" } = {}) {
   const avg = vols.reduce((a, v) => a + v, 0) / Math.max(1, vols.length);
   const early = avg > 0 && (bars.at(-1).volume || 0) < avg * 0.1;
   if (early) bars = bars.slice(0, -1);
-  const r = readMarket({ "1D": bars }, { main: "1D", symbol: stock.symbol, sessionFraction: early || !now ? 1 : (market === "us" ? usSessionFraction : kuwaitSessionFraction)(bars.at(-1).time, now) });
+  const r = readMarket({ "1D": bars }, { main: "1D", symbol: stock.symbol, sessionFraction: early || !now ? 1 : (SESSION[market] || kuwaitSessionFraction)(bars.at(-1).time, now) });
   if (r.error) return { ...stock, error: r.error };
   const last = bars.at(-1),
     prev = bars.at(-2);
@@ -77,7 +86,8 @@ export function scanRow(stock, bars, now = Date.now(), { market = "kw" } = {}) {
     ...stock,
     price: r.price,
     changePct: prev?.close ? Math.round(((last.close - prev.close) / prev.close) * 1000) / 10 : null,
-    value: Math.round(tradedValue(bars, 20, market !== "us")),
+    // Kuwaiti prices are in fils; dollars and riyals are whole units
+    value: Math.round(tradedValue(bars, 20, market === "kw")),
     trend: r.overall,
     state: r.state,
     breakout: r.breakout,
@@ -96,7 +106,7 @@ export function scanRow(stock, bars, now = Date.now(), { market = "kw" } = {}) {
     weekly: weekTrend(bars),
     closePos: closePos(bars.at(-1)),
     market,
-    trail: r.atrPct && r.price ? { atr: market === "us" ? US_TRAIL_ATR : TRAIL_ATR, dist: Math.round(((r.atrPct * r.price) / 100) * (market === "us" ? US_TRAIL_ATR : TRAIL_ATR) * 100) / 100 } : null,
+    trail: r.atrPct && r.price ? { atr: TRAILS[market] || TRAIL_ATR, dist: Math.round(((r.atrPct * r.price) / 100) * (TRAILS[market] || TRAIL_ATR) * 100) / 100 } : null,
   };
   // one number to sort by: what the filters reward, with volume as the tie breaker
   row.score =

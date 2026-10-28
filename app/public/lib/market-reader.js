@@ -243,6 +243,16 @@ export function kuwaitSessionFraction(barTime, now = Date.now()) {
   return Math.min(1, Math.max(0.05, (min - 9 * 60) / 220));
 }
 
+// The same for Tadawul (Sunday to Thursday, 10:00-15:00 Riyadh time, UTC+3 all year, then the
+// closing auction to 15:10): 300 minutes, close to linear.
+export function saudiSessionFraction(barTime, now = Date.now()) {
+  const k = new Date(now + 3 * 3600e3),
+    day = k.toISOString().slice(0, 10);
+  if (new Date(barTime * 1000 + 3 * 3600e3).toISOString().slice(0, 10) !== day) return 1;
+  const min = k.getUTCHours() * 60 + k.getUTCMinutes();
+  return Math.min(1, Math.max(0.05, (min - 10 * 60) / 310));
+}
+
 // The same for the US session (9:30-16:00 New York time, Monday to Friday, summer time included).
 export function usSessionFraction(barTime, now = Date.now()) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(now)).map((p) => [p.type, p.value]));
