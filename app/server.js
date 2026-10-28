@@ -20,6 +20,7 @@ import * as uswatch from "./lib/uswatch.js";
 import * as sawatch from "./lib/sawatch.js";
 import * as aewatch from "./lib/aewatch.js";
 import * as trades from "./lib/trades.js";
+import * as tgbot from "./lib/tgbot.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
 import * as copilot from "./lib/copilot.js";
@@ -492,6 +493,7 @@ async function handle(req, res) {
     if (p === "/api/sawatch/run" && req.method === "POST") return send(res, 200, await sawatch.runOnce());
     if (p === "/api/sawatch/regime" && req.method === "POST") return send(res, 200, await sawatch.regimeCheck());
     if (p === "/api/sawatch/close" && req.method === "POST") return send(res, 200, await sawatch.closeBrief());
+    if (p === "/api/tgbot/ask") return send(res, 200, { text: await tgbot.answer(String(q.q || "")) });
     if (p === "/api/trades") return send(res, 200, { open: trades.list(), closed: trades.closed().slice(0, 50) });
     if (p === "/api/trades/check" && req.method === "POST") return send(res, 200, { us: await uswatch.checkTrades(), kw: await kwwatch.checkTrades(), sa: await sawatch.checkTrades(), ae: await aewatch.checkTrades() });
     // ---------- the Kuwait entry signal tested on the market's history ----------
@@ -691,6 +693,7 @@ if (isMain) {
   uswatch.start();
   sawatch.start();
   aewatch.start();
+  tgbot.start();
   console.log(
     `\n  AskCharts ${VERSION} is running\n\n  Open:  ${url}\n  Stop:  Ctrl+C\n  Data:  ${store.DATA_DIR}\n`,
   );

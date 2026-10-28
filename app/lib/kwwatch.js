@@ -39,12 +39,12 @@ export const settings = () => {
 
 // Telegram: your own bot (from @BotFather). The token stays on the server; the chat is found from
 // the /start message you send the bot, so nobody has to look up a chat id.
-const tg = async (method, body) => {
+const tg = async (method, body, ms = 15000) => {
   const res = await fetch(`https://api.telegram.org/bot${cfg.tgToken}/${method}`, {
     method: body ? "POST" : "GET",
     headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(ms),
   });
   const j = await res.json().catch(() => ({}));
   if (!j.ok) throw Object.assign(new Error(j.description === "Unauthorized" ? "رمز البوت غير صحيح" : `تيليجرام: ${j.description || `HTTP ${res.status}`}`), { status: 400 });
@@ -77,16 +77,30 @@ export function routeCommand(text, bot = "") {
 }
 export const chatFor = (market) => (market && cfg.tgChats?.[market]) || cfg.tgChat;
 let tgPolling = false;
-export async function pollTelegram() {
+// A message that isn't a command, from one of your own chats (the private one or a market group),
+// goes to this handler (lib/tgbot.js: a stock's reading) and its answer back to that chat. Anyone
+// else writing to the bot gets nothing.
+let textHandler = null;
+export const onText = (fn) => (textHandler = fn);
+const mine = (chat) => chat === cfg.tgChat || Object.values(cfg.tgChats || {}).includes(chat);
+export async function pollTelegram({ wait = 0 } = {}) {
   if (!cfg.tgToken || tgPolling) return { changed: 0 };
   tgPolling = true;
   let changed = 0;
   try {
-    const ups = await tg("getUpdates", { offset: (state.tgOffset || 0) + 1, timeout: 0, allowed_updates: ["message", "channel_post"] });
+    const ups = await tg("getUpdates", { offset: (state.tgOffset || 0) + 1, timeout: wait, allowed_updates: ["message", "channel_post"] }, (wait + 15) * 1000);
     for (const u of ups) {
       state.tgOffset = Math.max(state.tgOffset || 0, u.update_id);
+      store.write("kwwatch-state", state);
       const msg = u.message || u.channel_post;
       const cmd = routeCommand(msg?.text, cfg.tgBot);
+      if (!cmd && msg?.text && msg.chat && textHandler && mine(String(msg.chat.id))) {
+        const chat = String(msg.chat.id);
+        await tg("sendChatAction", { chat_id: chat, action: "typing" }).catch(() => {});
+        const reply = await textHandler(msg.text).catch((e) => `صار خطأ: ${e.message}`);
+        if (reply) await tg("sendMessage", { chat_id: chat, text: reply.slice(0, 4000), disable_web_page_preview: true }).catch(() => {});
+        continue;
+      }
       if (!cmd || !msg.chat) continue;
       const chat = String(msg.chat.id);
       cfg.tgChats = { ...(cfg.tgChats || {}) };
@@ -304,16 +318,26 @@ function schedule() {
   followTrades();
 }
 
-// the group commands, read once a minute
-let tgTimer = null;
+// the bot's messages (group commands and questions about a stock), read as they come: Telegram holds
+// each request up to 25 seconds until something arrives
+let tgLoop = false;
+const pause = (ms) => new Promise((r) => setTimeout(r, ms).unref?.());
 export const start = () => {
   schedule();
-  clearInterval(tgTimer);
-  tgTimer = setInterval(() => pollTelegram().catch(() => {}), 60e3);
-  tgTimer.unref?.();
+  if (tgLoop) return;
+  tgLoop = true;
+  (async () => {
+    while (tgLoop) {
+      if (!cfg.tgToken) {
+        await pause(30e3);
+        continue;
+      }
+      await pollTelegram({ wait: 25 }).catch(() => pause(10e3));
+    }
+  })();
 };
 export const stop = () => {
   clearTimeout(timer);
   clearInterval(tradesTimer);
-  clearInterval(tgTimer);
+  tgLoop = false;
 };
