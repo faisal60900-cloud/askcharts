@@ -494,6 +494,15 @@ async function handle(req, res) {
     if (p === "/api/sawatch/regime" && req.method === "POST") return send(res, 200, await sawatch.regimeCheck());
     if (p === "/api/sawatch/close" && req.method === "POST") return send(res, 200, await sawatch.closeBrief());
     if (p === "/api/tgbot/ask") return send(res, 200, { text: await tgbot.answer(String(q.q || "")) });
+    // your own position, followed like a signal: { query: "ALSAFAT" or a name, entry, stop, qty, targets }
+    if (p === "/api/trades/mine" && req.method === "POST") {
+      const b = await readBody(req, 1e4);
+      const f = tgbot.findStock(b.query);
+      if (!f) return send(res, 400, { error: "ما عرفت السهم" });
+      const t = trades.newTrade({ market: f.market, code: f.stock.code, symbol: f.stock.symbol, name: f.stock.ar || f.stock.en, entry: Number(b.entry), stop: Number(b.stop), targets: (b.targets || []).map(Number).filter((v) => v > Number(b.entry)), qty: Number(b.qty) || null, price: Number(b.price) || Number(b.entry), mine: true });
+      trades.remove?.(`${f.market}:${f.stock.code}`);
+      return send(res, 200, { ok: trades.open(t), trade: t });
+    }
     if (p === "/api/trades") return send(res, 200, { open: trades.list(), closed: trades.closed().slice(0, 50) });
     if (p === "/api/trades/check" && req.method === "POST") return send(res, 200, { us: await uswatch.checkTrades(), kw: await kwwatch.checkTrades(), sa: await sawatch.checkTrades(), ae: await aewatch.checkTrades() });
     // ---------- the Kuwait entry signal tested on the market's history ----------

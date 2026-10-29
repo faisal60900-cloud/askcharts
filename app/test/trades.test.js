@@ -84,3 +84,15 @@ test("the book follows a stock once and reports what happened", async () => {
   assert.equal(T.list("us").length, 0);
   assert.equal(T.closed("us")[0].closed.why, "stop");
 });
+
+test("your own position: a warning near the stop once a day, and the money in dinars", () => {
+  const t = T.newTrade({ market: "kw", code: "ALSAFAT", name: "الصفاة", entry: 131.2, stop: 127, targets: [136, 140], qty: 85957, mine: true, price: 128, at: Date.now() });
+  const ev = T.step(t, { price: 128 }, Date.UTC(2026, 9, 29, 9));
+  assert.equal(ev[0].kind, "near");
+  assert.match(T.message(t, ev[0]), /قريب من وقف الخسارة/);
+  assert.match(T.message(t, ev[0]), /361/, "(131.2 - 127) × 85,957 / 1000 ≈ 361 د.ك");
+  assert.deepEqual(T.step(t, { price: 128 }, Date.UTC(2026, 9, 29, 9, 5)), [], "once a day");
+  const s = T.step(t, { price: 126 }, Date.UTC(2026, 9, 30, 9));
+  assert.equal(s[0].kind, "stop");
+  assert.match(T.message(t, s[0]), /البيع تسويه أنت/);
+});

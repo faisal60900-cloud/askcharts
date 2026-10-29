@@ -18,8 +18,9 @@ const r2 = (v) => Math.round(v * 100) / 100;
 // A new trade from a signal. Targets the price had already passed when the signal was sent count as
 // passed (the entry message said so), so they don't arrive later as news.
 // bar: the signal day's candle, so its range before the signal isn't counted later.
-export function newTrade({ market, code, symbol, name, entry, stop, targets, trailDist = null, price = entry, at = Date.now(), bar = null }) {
-  const t = { market, code, symbol, name, entry, stop0: stop, stop, targets, trailDist, high: Math.max(entry, price), hit: 0, sold: 0, value: 0, opened: at, last: price, lastAt: at };
+// qty and mine: a position of your own (your shares and your stop), with the money in its messages
+export function newTrade({ market, code, symbol, name, entry, stop, targets, trailDist = null, price = entry, at = Date.now(), bar = null, qty = null, mine = false }) {
+  const t = { market, code, symbol, name, entry, stop0: stop, stop, targets, trailDist, high: Math.max(entry, price), hit: 0, sold: 0, value: 0, opened: at, last: price, lastAt: at, qty, mine };
   if (bar) Object.assign(t, { dDate: new Date(bar.time * 1000).toISOString().slice(0, 10), dh: bar.high, dl: bar.low });
   if (market === "us") while (t.hit < targets.length && price >= targets[t.hit]) take(t, targets[t.hit]);
   else while (t.hit < targets.length && price >= targets[t.hit]) t.hit++;
@@ -50,6 +51,12 @@ export function step(t, q, now = Date.now()) {
     ev.push({ kind: "stop", price: px, ret: result(t, px), hit: t.hit });
     t.closed = { at: now, price: px, ret: result(t, px), why: "stop" };
     return ev;
+  }
+  // your own position: a warning once a day when the price comes within 1% of your stop
+  const day = new Date(now).toISOString().slice(0, 10);
+  if (t.mine && low <= t.stop * 1.01 && t.nearDay !== day) {
+    t.nearDay = day;
+    ev.push({ kind: "near", price: q.price });
   }
   if (t.market === "us") {
     while (t.hit < t.targets.length && high >= t.targets[t.hit]) {
@@ -127,6 +134,11 @@ export function message(t, e) {
     ].filter(Boolean).join("\n");
   }
   if (e.kind === "trail") return `🔒 ${head}: ارتفع الوقف المتحرك إلى ${money(e.stop)} (${fromEntry(e.stop)} من الدخول) · آخر سعر ${money(t.last)}`;
+  // the money for your own position: (price - cost) × shares, fils to dinars in Kuwait
+  const pnl = (px) => (t.qty ? `\n💰 ${px >= t.entry ? "ربحك" : "خسارتك"}: ${n2(Math.abs(((px - t.entry) * t.qty) / (t.market === "kw" ? 1000 : 1)))} ${{ kw: "د.ك", us: "$", sa: "ريال", ae: "درهم" }[t.market]} (${fromEntry(px)})` : "");
+  if (e.kind === "near") return `⚠️ ${head}: السعر ${money(e.price)} قريب من وقف الخسارة ${money(t.stop)} (يبعد ${n2(((e.price - t.stop) / e.price) * 100)}%)${pnl(t.stop).replace("💰 خسارتك", "💰 خسارتك لو ضرب الوقف")}\nراقب السهم.`;
+  if (e.kind === "stop" && t.mine) return `🛑 ${head}: السعر وصل وقف الخسارة اللي حددته ${money(t.stop)} (آخر سعر ${money(e.price)}).${pnl(e.price)}\nهذا تنبيه، والبيع تسويه أنت من تطبيق الوسيط.`;
+  if (e.kind === "target" && t.mine) return `✅ ${head}: وصل ${money(e.price)} (الهدف ${e.k} من ${n}).${pnl(e.price)}${t.targets[e.k] ? `\n🎯 اللي بعده: ${money(t.targets[e.k])}` : ""}`;
   if (e.kind === "stop") {
     if (t.market === "us" && e.hit) return `🔒 ${head}: رجع السعر لوقف الربح ${money(e.price)} بعد ${e.hit === 1 ? "الهدف الأول" : `${e.hit} أهداف`}. انتهت الصفقة.\n📊 النتيجة الإجمالية حسب الخطة: ${pct(e.ret)}`;
     return `${e.ret >= 0 ? "🔒" : "🛑"} ${head}: ضرب ${e.ret >= 0 ? "الوقف المتحرك" : "وقف الخسارة"} عند ${money(e.price)}. انتهت الصفقة.\n📊 النتيجة: ${pct(e.ret)}`;
@@ -144,6 +156,12 @@ export function open(t) {
   save();
   return true;
 }
+export const remove = (key) => {
+  if (!book.open[key]) return false;
+  delete book.open[key];
+  save();
+  return true;
+};
 export const list = (market) => Object.values(book.open).filter((t) => !market || t.market === market);
 export const closed = (market) => book.closed.filter((t) => !market || t.market === market);
 
