@@ -23,7 +23,10 @@ import * as feeds from "./feeds.js";
 import * as imports from "./imports.js";
 import * as history from "./history.js";
 import * as store from "./store.js";
-import { searchGulf, resolveGulfName } from "./gulf.js";
+import { searchGulf, resolveGulfName, normAr } from "./gulf.js";
+import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
+import { SAUDI_STOCKS } from "../public/lib/saudi-market.js";
+import { UAE_STOCKS } from "../public/lib/uae-market.js";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
@@ -1514,7 +1517,7 @@ export async function search(q) {
         });
     }
   // Boursa Kuwait and Tadawul by ticker, English or Arabic name, ahead of Yahoo's own (same symbols, deduped below).
-  results.push(...searchGulf(q));
+  results.push(...searchGulf(q), ...searchListed(q));
   if (!OFFLINE) {
     const tasks = [
       getJson(
@@ -1700,3 +1703,25 @@ export async function probeAll() {
 }
 
 export { getJson, cached, NQ };
+
+// Every listed stock of the scanners (Boursa Kuwait, Tadawul, Dubai) by code or Arabic name, so a
+// stock outside the short Gulf list (ALSAFAT, الصفاة) is found too.
+const LISTED = [
+  [KUWAIT_STOCKS, "Boursa Kuwait"],
+  [SAUDI_STOCKS, "Tadawul"],
+  [UAE_STOCKS, "DFM"],
+];
+export function searchListed(q) {
+  const raw = String(q || "").trim();
+  if (raw.length < 2) return [];
+  const ar = /[\u0600-\u06ff]/.test(raw);
+  const k = ar ? normAr(raw).replace(/^ال/, "") : raw.toUpperCase();
+  const out = [];
+  for (const [list, exchange] of LISTED)
+    for (const s of list) {
+      const hit = ar ? s.ar && normAr(s.ar).replace(/^ال/, "").includes(k) : s.code.startsWith(k) || (k.length >= 3 && s.en.toUpperCase().includes(k));
+      if (hit) out.push({ symbol: s.symbol, name: `${s.en}${s.ar ? ` · ${s.ar}` : ""}`, type: "stock", exchange });
+    }
+  return out.slice(0, 12);
+}
+
