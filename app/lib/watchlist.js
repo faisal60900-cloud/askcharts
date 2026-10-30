@@ -43,25 +43,32 @@ export function evaluate(bars) {
 
 const n2 = (v, d = 2) => Number(v).toLocaleString("en-US", { maximumFractionDigits: d });
 const pct = (v) => `${v > 0 ? "+" : ""}${n2(v, 1)}%`;
-export function message(code, e) {
+export function message(code, e, company = "") {
+  const co = company ? `🏢 الشركة: ${company}` : "";
   if (e.kind === "turn")
     return [
       `🟢🇺🇸 ${code} بدأ يرتد`,
+      co,
       `السعر ${n2(e.price)}$ (${pct(e.change)} اليوم) · فوق أعلى سعر أمس ${n2(e.yHigh)}$`,
       `نازل ${pct(e.fromHigh)} من أعلى سعر في سنة · RSI ${n2(e.rsi, 0)} (كان في تشبع بيعي قبل أيام)`,
       `🛑 لو رجع نزل تحت ${n2(e.low20)}$ (أدنى سعر في 20 يوم) تكون المحاولة فشلت.`,
       "أول علامة ارتداد، مو تأكيد. الأحوط تدخل على دفعات وبكمية صغيرة.",
-    ].join("\n");
+    ]
+      .filter(Boolean)
+      .join("\n");
   return [
     `🔴🇺🇸 ${code} كسر قاعه`,
+    co,
     `السعر ${n2(e.price)}$ (${pct(e.change)} اليوم) تحت أدنى سعر في 20 يوم (${n2(e.low20)}$)`,
     `نازل ${pct(e.fromHigh)} من أعلى سعر في سنة · RSI ${n2(e.rsi, 0)}`,
     "النزول مستمر: لا تستعجل الشراء.",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 // One look at every stock in the list; send(text, code) delivers.
-export async function check(send, date) {
+export async function check(send, date, companyOf = async () => "") {
   let n = 0;
   for (const code of st.codes) {
     const bars = await getCandles(`US:${code}`, "1D", 300).then((r) => r.candles || []).catch(() => []);
@@ -70,7 +77,7 @@ export async function check(send, date) {
     const k = `${code}|${e.kind}|${date}`;
     if (st.sent[k]) continue;
     st.sent[k] = Date.now();
-    await send(message(code, e), code).catch(() => {});
+    await send(message(code, e, await companyOf(code).catch(() => "")), code).catch(() => {});
     n++;
   }
   for (const [k, at] of Object.entries(st.sent)) if (Date.now() - at > 5 * 86400e3) delete st.sent[k];

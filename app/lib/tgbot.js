@@ -13,6 +13,7 @@ import { UAE_STOCKS } from "../public/lib/uae-market.js";
 import { scanRow, FILTERS, entryRules } from "../public/lib/kuwait-scan.js";
 import { readMarket, todayFlow } from "../public/lib/market-reader.js";
 import { flowText } from "./flow.js";
+import { about, aboutLine } from "./about.js";
 export { flowText };
 
 const LISTS = [
@@ -68,7 +69,7 @@ const n2 = (v, d = 2) => (v == null || !Number.isFinite(v) ? "—" : Number(v).t
 const pct = (v) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : ""}${n2(v, 1)}%`);
 const moneyOf = (m) => (v) => (m === "us" ? `${n2(v)}$` : m === "kw" ? `${n2(v)} فلس` : m === "sa" ? `${n2(v)} ريال` : `${n2(v)} درهم`);
 
-export function readingText({ market, stock }, row, r, note = null, today = null) {
+export function readingText({ market, stock }, row, r, note = null, today = null, company = "") {
   const $ = moneyOf(market);
   const p = row.plan;
   const lacks = entryRules(market).filter((k) => !FILTERS[k].test(row)).map((k) => FILTERS[k].ar);
@@ -76,6 +77,7 @@ export function readingText({ market, stock }, row, r, note = null, today = null
   const frames = (r?.frames || []).filter((f) => f.trend).map((f) => `${f.ar} ${f.trend.ar}`);
   return [
     `📊${FLAG[market]} ${stock.code}${stock.ar ? ` — ${stock.ar}` : stock.en && stock.en !== stock.code ? ` — ${stock.en}` : ""}`,
+    aboutLine(company),
     `السعر: ${$(row.price)} (${pct(row.changePct)} اليوم)${row.early ? " · الجلسة بدأت للتو، القراءة على آخر جلسة مكتملة" : ""}`,
     r?.overall ? `📈 الاتجاه العام: ${r.overall.ar}${r.state?.ar ? ` · ${r.state.ar}` : ""}` : "",
     frames.length ? `الأطر: ${frames.join(" · ")}` : "",
@@ -111,9 +113,10 @@ export async function answer(text) {
   // today's buying and selling from the 15-minute bars, with the shares traded
   const tf = todayFlow(m15);
   const today = tf && { ...tf, volume: m15.filter((b) => new Date(b.time * 1000).toISOString().slice(0, 10) === tf.day).reduce((a, b) => a + (b.volume || 0), 0) };
-  const base = readingText(found, row, r.error ? null : r, null, today);
+  const company = await about(stock, market).catch(() => "");
+  const base = readingText(found, row, r.error ? null : r, null, today, company);
   const note = await write(ANALYST, `اكتب قراءة من 3 إلى 5 أسطر لهذا السهم من هذي الأرقام فقط: الاتجاه، السيولة، أقرب دعم ومقاومة، وش اللي يغير الصورة. بدون كلمة "اشترِ" أو "بِع"، وبدون عبارة "ليست توصية" (مكتوبة تحت).\n\n${base}`, { maxTokens: 1500 }).catch(() => null);
-  return note ? readingText(found, row, r.error ? null : r, note, today) : base;
+  return note ? readingText(found, row, r.error ? null : r, note, today, company) : base;
 }
 
 export const start = () => kwwatch.onText(answer);

@@ -11,6 +11,7 @@ import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
 import * as prealert from "./prealert.js";
 import * as kwflow from "./kwflow.js";
+import { about, aboutLine } from "./about.js";
 
 const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "", tgToken: "", tgChat: "", tgBot: "", prealerts: true };
 let cfg = { ...DEFAULTS, ...store.read("kwwatch", {}) };
@@ -224,11 +225,12 @@ export function track() {
   return `السجل التاريخي (${years[0]}–${lastY}): ${live.all.n} إشارة، متوسط ${sign(live.all.avgRet)} للصفقة بعد العمولة، ${live.all.profitable}% منها رابحة${ly?.n ? ` (سنة ${lastY}: ${sign(ly.avgRet)})` : ""}.`;
 }
 
-export function message(r) {
+export function message(r, company = "") {
   const p = r.plan,
     tg = p?.targets || [];
   return [
     `${r.code}${r.ar ? ` (${r.ar})` : ` (${r.en})`} — السعر ${num(r.price)}`,
+    aboutLine(company),
     `اختراق ${num(r.breakout?.level)} ✓ بسيولة ${num(r.breakout?.vol ?? r.relVol)}x · سيولة داخلة ${r.flow?.inflowPct}% · شراء ${r.buyToday}%`,
     `الاتجاه الأسبوعي صاعد · RSI ${num(r.rsi)} · إغلاق قرب القمة · الإشارات ${r.positives}✓ ${r.negatives}✗`,
     p ? `الشراء من ${num(p.entryZone.from)}–${num(p.entryZone.to)} · وقف أولي ${num(p.stop)}` : "",
@@ -273,7 +275,7 @@ export async function runOnce({ force = false } = {}) {
     }
     for (const r of fresh) {
       const flow = await flowFor(r.symbol, "kw").catch(() => "");
-      const text = message(r) + (flow ? `\n${flow}` : "");
+      const text = message(r, await about(r, "kw").catch(() => "")) + (flow ? `\n${flow}` : "");
       await alerts.notify({ symbol: r.symbol, name: "إشارة شراء", text, webhook: cfg.webhook, notify: { toast: true, sound: true, desktop: true } });
       if (cfg.tgToken && cfg.tgChat) await sendTelegram(`🟢🇰🇼 إشارة شراء\n${text}`, "kw").catch(() => {});
       if (cfg.waPhone && cfg.waKey) await sendWhatsApp(`🟢🇰🇼 إشارة شراء\n${text}`).catch(() => {});

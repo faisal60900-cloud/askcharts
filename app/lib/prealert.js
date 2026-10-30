@@ -3,6 +3,7 @@
 // resistance, volume already above normal, money coming in and buying ahead, so the level can be
 // watched (or an order placed at it) before it breaks. One per stock a day, the closest few a scan.
 import { FILTERS } from "../public/lib/kuwait-scan.js";
+import { about, aboutLine } from "./about.js";
 
 const FLAG = { kw: "🇰🇼", us: "🇺🇸", sa: "🇸🇦", ae: "🇦🇪" };
 const n2 = (v, d = 2) => (v == null || !Number.isFinite(v) ? "—" : Number(v).toLocaleString("en-US", { maximumFractionDigits: d }));
@@ -32,13 +33,14 @@ export function candidates(rows, market, minValue = 0, max = 3) {
     .slice(0, max);
 }
 
-export function message(r, market) {
+export function message(r, market, company = "") {
   const $ = money(market);
   const lvl = r.breakout.level,
     d = distance(r);
   const p = r.plan;
   return [
     `👀${FLAG[market]} استعد — ${r.code}${r.ar ? ` ${r.ar}` : r.en && r.en !== r.code ? ` (${r.en})` : ""}`,
+    aboutLine(company),
     `السعر ${$(r.price)} تحت مقاومة ${$(lvl)} بـ ${n2(d, 1)}% بس`,
     `💧 السيولة ${n2(r.relVol, 1)}x من المعتاد · داخلة ${r.flow?.inflowPct}% · الشراء اليوم ${r.buyToday}%`,
     `🚦 تصير إشارة شراء إذا اخترق ${$(lvl)} مع ${NEED[market]}.`,
@@ -57,7 +59,7 @@ export async function sendNew(rows, market, { minValue = 0, date, sent, send }) 
     const k = `${r.code}|${date}`;
     if (sent[k]) continue;
     sent[k] = Date.now();
-    await send(message(r, market), r).catch(() => {});
+    await send(message(r, market, await about(r, market).catch(() => "")), r).catch(() => {});
     n++;
   }
   for (const [k, at] of Object.entries(sent)) if (Date.now() - at > 3 * 86400e3) delete sent[k];

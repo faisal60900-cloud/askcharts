@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server.js --open",
     "serve": "node server.js",
-    "test": "node --test test/indicators.test.js test/reference.test.js test/providers.test.js test/feeds.test.js test/series.test.js test/backtest.test.js test/server.test.js test/imports.test.js test/quant.test.js test/onchain.test.js test/datakeys.test.js test/alerts-onchain.test.js test/history-store.test.js test/ai-providers.test.js test/gulf.test.js test/market-reader.test.js test/kuwait-scan.test.js test/kwwatch.test.js test/kuwait-backtest.test.js test/uswatch.test.js test/trades.test.js test/sawatch.test.js test/tgbot.test.js test/prealert.test.js test/watchlist.test.js test/kwflow.test.js",
+    "test": "node --test test/indicators.test.js test/reference.test.js test/providers.test.js test/feeds.test.js test/series.test.js test/backtest.test.js test/server.test.js test/imports.test.js test/quant.test.js test/onchain.test.js test/datakeys.test.js test/alerts-onchain.test.js test/history-store.test.js test/ai-providers.test.js test/gulf.test.js test/market-reader.test.js test/kuwait-scan.test.js test/kwwatch.test.js test/kuwait-backtest.test.js test/uswatch.test.js test/trades.test.js test/sawatch.test.js test/tgbot.test.js test/prealert.test.js test/watchlist.test.js test/kwflow.test.js test/about.test.js",
     "test:live": "node --test test/live.test.js",
     "doctor": "node scripts/doctor.js",
     "compare": "node scripts/compare.js",

@@ -10,6 +10,7 @@ import * as alerts from "./alerts.js";
 import * as kwwatch from "./kwwatch.js";
 import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
+import { about, aboutLine } from "./about.js";
 import * as prealert from "./prealert.js";
 import { addFlow } from "./uswatch.js";
 import { write, ANALYST } from "./ai-write.js";
@@ -103,12 +104,13 @@ function track() {
   return `📊 السجل التاريخي بهالخطة (${ys[0]}–${ys.at(-1)}): ${live.all.n} إشارة، ${live.all.profitable}% منها انتهت بربح، ومتوسط ${pct(live.all.avgRet)} للصفقة بعد العمولة.${bad.length ? ` كانت سلبية في ${bad.join("، ")}.` : ""}`;
 }
 
-function entryMessage(r, { market = null, note = null } = {}) {
+function entryMessage(r, { market = null, note = null, company = "" } = {}) {
   const p = r.plan;
   const entry = p ? (p.entryZone.from + p.entryZone.to) / 2 : r.price;
   const away = p ? ((r.price - p.entryZone.to) / p.entryZone.to) * 100 : null;
   return [
     `🟢${M.flag} إشارة شراء — ${r.code} ${r.ar || r.en}${r.sector ? ` (${r.sector})` : ""}`,
+    aboutLine(company),
     `السعر الآن: ${sar(r.price)} (${pct(r.changePct)} اليوم) · تداول يومي ${mil(r.value)} ${M.cur}`,
     `📈 الاختراق: ${sar(r.breakout?.level)} ✓ بسيولة ${n2(r.breakout?.vol, 1)}x · سيولة داخلة ${r.flow?.inflowPct}% · الشراء ${r.buyToday}%`,
     `الاتجاه الأسبوعي ${(r.weekly ?? 0) > 0 ? "صاعد" : "غير صاعد"} · RSI ${n2(r.rsi, 0)} · الإشارات ${r.positives}✓ ${r.negatives}✗`,
@@ -204,13 +206,14 @@ async function runOnce({ force = false } = {}) {
     // at once, then completed in place with the buying and selling and the analyst's note
     for (const r of fresh) {
       state.sent[`${r.code}|${date}`] = Date.now();
-      const first = await send(entryMessage(r, { market }) + "\n⏳ قراءة المحلل والصفقات الداخلة والخارجة جاية خلال ثواني…", r.symbol);
+      const first = await send(entryMessage(r, { market, company: await about(r, M.market, { ai: false }) }) + "\n⏳ قراءة المحلل والصفقات الداخلة والخارجة جاية خلال ثواني…", r.symbol);
       follow(r);
       const [note, flow] = await Promise.all([
         ai(`حلل إشارة الشراء هذي في سهم من ${M.title} في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع ${M.title} العام، أي المقاومات تبدو واقعية، المخاطر (المسافة للوقف)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}`, 2500).catch(() => null),
         flowFor(r.symbol, M.market).catch(() => ""),
       ]);
-      const full = addFlow(entryMessage(r, { market, note }), flow);
+      const company = await about(r, M.market).catch(() => "");
+      const full = addFlow(entryMessage(r, { market, note, company }), flow);
       if (!(await kwwatch.editTelegram(first, full).catch(() => false)) && kwwatch.settings().telegram) await send(full, r.symbol);
     }
     for (const [k, at] of Object.entries(state.sent)) if (Date.now() - at > 5 * 86400e3) delete state.sent[k];

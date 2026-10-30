@@ -16,6 +16,7 @@ import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
 import * as prealert from "./prealert.js";
 import * as watchlist from "./watchlist.js";
+import { about, aboutLine } from "./about.js";
 
 // light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
 const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true, prealerts: true };
@@ -138,7 +139,7 @@ export function track() {
 }
 
 // The entry message: everything a trader needs to judge it, in order.
-export function entryMessage(r, { market = null, note = null, reach = reachOf() } = {}) {
+export function entryMessage(r, { market = null, note = null, reach = reachOf(), company = "" } = {}) {
   const p = r.plan;
   const entry = p ? (p.entryZone.from + p.entryZone.to) / 2 : r.price;
   const R = p ? entry - p.stop : null;
@@ -146,6 +147,7 @@ export function entryMessage(r, { market = null, note = null, reach = reachOf() 
   const away = p ? ((r.price - p.entryZone.to) / p.entryZone.to) * 100 : null;
   return [
     `🟢🇺🇸 إشارة شراء — ${r.code} (${r.en})`,
+    aboutLine(company),
     `السعر الآن: ${usd(r.price)} (${pct(r.changePct)} اليوم)`,
     (r.changePct ?? 0) > 3 ? `⚠️ السهم طالع اليوم ${pct(r.changePct)}: جزء من الحركة صار، والأحوط تشتري بكمية أقل أو تنتظر تراجع للمنطقة.` : "",
     `📈 الاختراق: ${usd(r.breakout?.level)} ✓ بسيولة ${n2(r.breakout?.vol, 1)}x · سيولة داخلة ${r.flow?.inflowPct}% · الشراء ${r.buyToday}%`,
@@ -202,7 +204,7 @@ export async function runOnce({ force = false, list: only = null } = {}) {
     // market's state, the buying and selling and the analyst's note.
     const sentMsgs = [];
     for (const r of fresh) {
-      sentMsgs.push(await send(entryMessage(r, {}) + "\n⏳ قراءة المحلل والصفقات الداخلة والخارجة جاية خلال ثواني…", { symbol: r.symbol, name: "" }));
+      sentMsgs.push(await send(entryMessage(r, { company: await about(r, "us", { ai: false }) }) + "\n⏳ قراءة المحلل والصفقات الداخلة والخارجة جاية خلال ثواني…", { symbol: r.symbol, name: "" }));
       state.watched[r.code] = { symbol: r.symbol, en: r.en, since: Date.now(), close: r.price, level: r.breakout?.level ?? null, stop: r.plan?.stop ?? null };
       follow(r);
     }
@@ -218,8 +220,9 @@ export async function runOnce({ force = false, list: only = null } = {}) {
       }),
     );
     const flows = await Promise.all(fresh.map((r) => flowFor(r.symbol, "us").catch(() => "")));
+    const companies = await Promise.all(fresh.map((r) => about(r, "us").catch(() => "")));
     for (const [k, r] of fresh.entries()) {
-      const full = addFlow(entryMessage(r, { market, note: notes[k] }), flows[k]);
+      const full = addFlow(entryMessage(r, { market, note: notes[k], company: companies[k] }), flows[k]);
       const done = await kwwatch.editTelegram(sentMsgs[k], full).catch(() => false);
       // no message to complete (Telegram off or the edit refused): send the full one
       if (!done && kwwatch.settings().telegram) await send(full, { symbol: r.symbol, name: "" });
@@ -426,7 +429,7 @@ async function tick() {
     // the fallen leaders: a turn up or a new low, every 5 minutes from 10:00
     if (mk.open && m.min >= 10 * 60 && Date.now() - (state.lastWatchAt || 0) >= 5 * 60e3) {
       state.lastWatchAt = Date.now();
-      await watchlist.check((text, code) => send(text, { symbol: `US:${code}`, name: "" }), m.date);
+      await watchlist.check((text, code) => send(text, { symbol: `US:${code}`, name: "" }), m.date, (code) => about({ code, en: code }, "us"));
     }
     if (mk.open && Date.now() - state.lastScanAt >= (d.fast ? 5 : cfg.every) * 60e3) await runOnce();
     // between full scans, every minute: the stocks closest to a breakout, so a break is caught fast
