@@ -15,6 +15,7 @@ import { ema } from "../public/lib/indicators.js";
 import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
 import * as prealert from "./prealert.js";
+import * as watchlist from "./watchlist.js";
 
 // light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
 const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true, prealerts: true };
@@ -421,6 +422,11 @@ async function tick() {
     if ((mk.open || d.close) && Date.now() - (state.lastTradesAt || 0) >= 2 * 60e3 && trades.list("us").length) {
       state.lastTradesAt = Date.now();
       await checkTrades();
+    }
+    // the fallen leaders: a turn up or a new low, every 5 minutes from 10:00
+    if (mk.open && m.min >= 10 * 60 && Date.now() - (state.lastWatchAt || 0) >= 5 * 60e3) {
+      state.lastWatchAt = Date.now();
+      await watchlist.check((text, code) => send(text, { symbol: `US:${code}`, name: "" }), m.date);
     }
     if (mk.open && Date.now() - state.lastScanAt >= (d.fast ? 5 : cfg.every) * 60e3) await runOnce();
     // between full scans, every minute: the stocks closest to a breakout, so a break is caught fast

@@ -21,6 +21,7 @@ import * as sawatch from "./lib/sawatch.js";
 import * as aewatch from "./lib/aewatch.js";
 import * as trades from "./lib/trades.js";
 import * as tgbot from "./lib/tgbot.js";
+import * as watchlist from "./lib/watchlist.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
 import * as copilot from "./lib/copilot.js";
@@ -502,6 +503,10 @@ async function handle(req, res) {
       const t = trades.newTrade({ market: f.market, code: f.stock.code, symbol: f.stock.symbol, name: f.stock.ar || f.stock.en, entry: Number(b.entry), stop: Number(b.stop), targets: (b.targets || []).map(Number).filter((v) => v > Number(b.entry)), qty: Number(b.qty) || null, price: Number(b.price) || Number(b.entry), mine: true });
       trades.remove?.(`${f.market}:${f.stock.code}`);
       return send(res, 200, { ok: trades.open(t), trade: t });
+    }
+    if (p === "/api/watchlist") {
+      if (req.method === "POST") return send(res, 200, { codes: watchlist.set((await readBody(req, 1e4)).codes || []) });
+      return send(res, 200, { codes: watchlist.codes() });
     }
     if (p === "/api/trades") return send(res, 200, { open: trades.list(), closed: trades.closed().slice(0, 50) });
     if (p === "/api/trades/check" && req.method === "POST") return send(res, 200, { us: await uswatch.checkTrades(), kw: await kwwatch.checkTrades(), sa: await sawatch.checkTrades(), ae: await aewatch.checkTrades() });
