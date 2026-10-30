@@ -10,6 +10,7 @@ import { scanRow } from "../public/lib/kuwait-scan.js";
 import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
 import * as prealert from "./prealert.js";
+import * as kwflow from "./kwflow.js";
 
 const DEFAULTS = { on: false, every: 15, minValue: 10000, webhook: "", afterClose: true, waPhone: "", waKey: "", tgToken: "", tgChat: "", tgBot: "", prealerts: true };
 let cfg = { ...DEFAULTS, ...store.read("kwwatch", {}) };
@@ -321,6 +322,8 @@ function followTrades() {
   if (!cfg.on) return;
   tradesTimer = setInterval(() => {
     if ((sessionOpen() || afterCloseWindow()) && trades.list("kw").length) checkTrades().catch(() => {});
+    // buying money into your own stocks (lib/kwflow.js)
+    if (sessionOpen()) kwflow.check(deliver).catch(() => {});
   }, 3 * 60e3);
   tradesTimer.unref?.();
 }

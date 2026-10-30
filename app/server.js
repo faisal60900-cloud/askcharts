@@ -22,6 +22,7 @@ import * as aewatch from "./lib/aewatch.js";
 import * as trades from "./lib/trades.js";
 import * as tgbot from "./lib/tgbot.js";
 import * as watchlist from "./lib/watchlist.js";
+import * as kwflow from "./lib/kwflow.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
 import * as copilot from "./lib/copilot.js";
@@ -504,6 +505,14 @@ async function handle(req, res) {
       trades.remove?.(`${f.market}:${f.stock.code}`);
       return send(res, 200, { ok: trades.open(t), trade: t });
     }
+    if (p === "/api/kwflow") {
+      if (req.method === "POST") {
+        const b = await readBody(req, 1e4);
+        return send(res, 200, { list: b.remove ? kwflow.removeStock(b.code) : kwflow.setStock(b.code, b) });
+      }
+      return send(res, 200, { list: kwflow.list() });
+    }
+    if (p === "/api/kwflow/check" && req.method === "POST") return send(res, 200, await kwflow.check(async () => {}));
     if (p === "/api/watchlist") {
       if (req.method === "POST") return send(res, 200, { codes: watchlist.set((await readBody(req, 1e4)).codes || []) });
       return send(res, 200, { codes: watchlist.codes() });
