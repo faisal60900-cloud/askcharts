@@ -58,7 +58,10 @@ test("stocks named in a sentence", () => {
   assert.deepEqual(codes("السوق اليوم كان صعب"), []);
 });
 
-test("a sentence goes to the analyst (no AI here: a clear message back), /new starts over", async () => {
+test("a sentence: the stock help while the talk is off; the analyst when on; /new starts over", async () => {
+  assert.match(await B.answer("شرايك في السوق اليوم؟"), /ما عرفت السهم/);
+  B.setChat(true);
   assert.match(await B.answer("شرايك في السوق اليوم؟"), /المحلل ما رد/);
+  B.setChat(false);
   assert.match(await B.answer("/new"), /محادثة جديدة/);
 });

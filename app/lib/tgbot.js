@@ -14,6 +14,7 @@ import { scanRow, FILTERS, entryRules } from "../public/lib/kuwait-scan.js";
 import { readMarket, todayFlow } from "../public/lib/market-reader.js";
 import { flowText } from "./flow.js";
 import * as trades from "./trades.js";
+import * as store from "./store.js";
 import { about, aboutLine } from "./about.js";
 export { flowText };
 
@@ -98,7 +99,7 @@ export function readingText({ market, stock }, row, r, note = null, today = null
     .join("\n");
 }
 
-const HELP = "اكتب لي رمز السهم أو اسمه، وأرد عليك بتحليله.\nوتقدر تسولف معاي وتسألني أي سؤال عن السوق أو سهم (مثلًا: شرايك في أوراكل الحين؟)، وأرد عليك كمحلل. /new يبدأ محادثة جديدة.\n\nأمثلة:\n🇰🇼 KFH أو بيتك · NBK أو الوطني\n🇸🇦 2222 أو أرامكو · 1120 أو الراجحي\n🇦🇪 EMAAR أو إعمار\n🇺🇸 SPCX · NVDA · AAPL\n(لسهم أمريكي رمزه يشبه سهم خليجي اكتب: us STC)";
+const HELP = "اكتب لي رمز السهم أو اسمه، وأرد عليك بتحليله:\n🇰🇼 KFH أو بيتك · NBK أو الوطني\n🇸🇦 2222 أو أرامكو · 1120 أو الراجحي\n🇦🇪 EMAAR أو إعمار\n🇺🇸 SPCX · NVDA · AAPL\n(لسهم أمريكي رمزه يشبه سهم خليجي اكتب: us STC)";
 
 // The reading without the analyst's note, for a stock found from what was typed (or null).
 async function plainReading(found) {
@@ -185,6 +186,9 @@ export async function chat(text, chatId = "me", { positions = [] } = {}) {
   return reply;
 }
 
+// talking with the analyst is off unless turned on (data/tgbot.json { "chat": true })
+export const chatOn = () => !!store.read("tgbot", { chat: false }).chat;
+export const setChat = (on) => (store.write("tgbot", { chat: !!on }), !!on);
 export async function answer(text, chatId = "me") {
   const t = String(text).trim();
   if (/^\/?(start|help|مساعدة|\?|؟)$/i.test(t)) return HELP;
@@ -196,7 +200,7 @@ export async function answer(text, chatId = "me") {
   const words = t.split(/\s+/).length;
   const arabic = /[\u0600-\u06ff]/.test(t);
   const found = words > 3 ? null : !arabic ? findStock(t) : exactArabic(t) || (words === 1 ? findStock(t) : null);
-  if (!found) return chat(t, chatId, { positions: trades.list().filter((x) => x.mine) });
+  if (!found) return chatOn() ? chat(t, chatId, { positions: trades.list().filter((x) => x.mine) }) : `ما عرفت السهم «${t.slice(0, 30)}».\n\n${HELP}`;
   const { market, stock } = found;
   const get = (tf, n) => getCandles(stock.symbol, tf, n).then((x) => x.candles || []).catch(() => []);
   const [d, w, h4, h1, m15] = await Promise.all([get("1D", 300), get("1W", 200), get("4h", 300), get("1h", 300), get("15m", 300)]);
