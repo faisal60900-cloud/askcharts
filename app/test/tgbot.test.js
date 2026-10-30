@@ -50,3 +50,15 @@ test("the buying and selling lines: today's quantities and values, the period, t
   );
   for (const part of ["كمية الشراء 700 ألف سهم (70%)", "كمية البيع 300 ألف سهم (30%)", "قيمة الشراء 500 ألف د.ك", "🟢 +300 ألف د.ك", "آخر 20 جلسة", "🐋", "شراء قوي", "2.6x"]) assert.ok(t.includes(part), part);
 });
+
+test("stocks named in a sentence", () => {
+  const codes = (t) => B.stocksIn(t).map((f) => f.stock.code);
+  assert.deepEqual(codes("شرايك في ORCL و NVDA الحين؟"), ["ORCL", "NVDA"]);
+  assert.deepEqual(codes("وش رايك ببيتك والصفاة للاستثمار"), ["KFH", "ALSAFAT"]);
+  assert.deepEqual(codes("السوق اليوم كان صعب"), []);
+});
+
+test("a sentence goes to the analyst (no AI here: a clear message back), /new starts over", async () => {
+  assert.match(await B.answer("شرايك في السوق اليوم؟"), /المحلل ما رد/);
+  assert.match(await B.answer("/new"), /محادثة جديدة/);
+});

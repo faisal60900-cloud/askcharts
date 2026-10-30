@@ -13,6 +13,7 @@ import { UAE_STOCKS } from "../public/lib/uae-market.js";
 import { scanRow, FILTERS, entryRules } from "../public/lib/kuwait-scan.js";
 import { readMarket, todayFlow } from "../public/lib/market-reader.js";
 import { flowText } from "./flow.js";
+import * as trades from "./trades.js";
 import { about, aboutLine } from "./about.js";
 export { flowText };
 
@@ -97,12 +98,105 @@ export function readingText({ market, stock }, row, r, note = null, today = null
     .join("\n");
 }
 
-const HELP = "اكتب لي رمز السهم أو اسمه، وأرد عليك بتحليله:\n🇰🇼 KFH أو بيتك · NBK أو الوطني\n🇸🇦 2222 أو أرامكو · 1120 أو الراجحي\n🇦🇪 EMAAR أو إعمار\n🇺🇸 SPCX · NVDA · AAPL\n(لسهم أمريكي رمزه يشبه سهم خليجي اكتب: us STC)";
+const HELP = "اكتب لي رمز السهم أو اسمه، وأرد عليك بتحليله.\nوتقدر تسولف معاي وتسألني أي سؤال عن السوق أو سهم (مثلًا: شرايك في أوراكل الحين؟)، وأرد عليك كمحلل. /new يبدأ محادثة جديدة.\n\nأمثلة:\n🇰🇼 KFH أو بيتك · NBK أو الوطني\n🇸🇦 2222 أو أرامكو · 1120 أو الراجحي\n🇦🇪 EMAAR أو إعمار\n🇺🇸 SPCX · NVDA · AAPL\n(لسهم أمريكي رمزه يشبه سهم خليجي اكتب: us STC)";
 
-export async function answer(text) {
-  if (/^\/?(start|help|مساعدة|\?|؟)$/i.test(String(text).trim())) return HELP;
-  const found = findStock(text);
-  if (!found) return `ما عرفت السهم «${String(text).slice(0, 30)}».\n\n${HELP}`;
+// The reading without the analyst's note, for a stock found from what was typed (or null).
+async function plainReading(found) {
+  const { market, stock } = found;
+  const get = (tf, n) => getCandles(stock.symbol, tf, n).then((x) => x.candles || []).catch(() => []);
+  const [d, w, h4, h1, m15] = await Promise.all([get("1D", 300), get("1W", 200), get("4h", 300), get("1h", 300), get("15m", 300)]);
+  if (d.length < 60) return null;
+  const row = scanRow(stock, d, Date.now(), { market });
+  if (row.error) return null;
+  const r = readMarket({ "1D": d, "1W": w, "4h": h4, "1h": h1, "15m": m15 }, { main: "1D", symbol: stock.symbol });
+  const tf = todayFlow(m15);
+  const today = tf && { ...tf, volume: m15.filter((b) => new Date(b.time * 1000).toISOString().slice(0, 10) === tf.day).reduce((a, b) => a + (b.volume || 0), 0) };
+  return readingText(found, row, r.error ? null : r, null, today, await about(stock, market).catch(() => "")).replace(/\nقراءة فنية للمعلومة، وليست توصية\.$/, "");
+}
+
+// ---------- talking with the analyst ----------
+// Anything that isn't just a stock's name goes to the analyst, with the last turns of the talk, your
+// own positions, and the reading of any stock the message names (so it reasons on real numbers).
+const CHAT_SYSTEM = `أنت محلل أسهم خبير (فني وأساسي) تتكلم مع متداول كويتي اسمه فيصل على تيليجرام، كأنك صديقه المحلل.
+- اكتب بالعربي الخليجي البسيط، جمل قصيرة وواضحة، بدون Markdown ولا نجوم.
+- ناقشه بصدق: قول له رأيك بالتحليل والمخاطر والسيناريوهات، ولا تجامله إذا فكرته فيها خطر.
+- استخدم الأرقام المعطاة لك بس. ما عندك أسعار أو أخبار إلا اللي تحت؛ إذا سأل عن شي ما عندك معلومته، قول له بصراحة إنك ما تعرفه الحين أو اطلب منه يكتب رمز السهم.
+- لا تقول "اشترِ" أو "بِع" كأمر؛ اعرض الخيارات وإيجابيات وسلبيات كل واحد، والقرار له. وذكّره بحجم المخاطرة والوقف لما يكون مناسب.
+- الرد مختصر (لين 10 أسطر) إلا إذا طلب تفصيل.`;
+const chats = new Map(); // chat id → [{ role, text }]
+const tokensOf = (text) => [...new Set(String(text).split(/[\s،,.؟?!:()"«»]+/).filter((w) => w.length >= 2))];
+function exactArabic(cand) {
+  const bare = cand.replace(/^(و|ف)?(ب|ل|ك)?(?=ال|[\u0600-\u06ff]{3})/, "");
+  for (const c of [...new Set([cand, bare, bare.replace(/^ال/, "")])]) {
+    const k = key(c);
+    if (k.length < 3) continue;
+    if (ALIAS[k]) return findStock(ALIAS[k]);
+    const g = GULF.find((x) => x.ar.some((n) => key(n) === k));
+    if (g) return findStock(g.ar[0]);
+    for (const [m, list] of LISTS) {
+      const s = list.find((x) => x.ar && key(x.ar) === k);
+      if (s) return { market: m, stock: s };
+    }
+  }
+  return null;
+}
+export function stocksIn(text) {
+  const seen = new Map();
+  const words = tokensOf(text);
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    // codes in capitals (NVDA, KFH), Saudi numbers, Arabic names of one or two words
+    if (/^[A-Z]{2,6}$/.test(w) || /^\d{4}$/.test(w)) {
+      const f = findStock(w);
+      if (f && !seen.has(f.stock.code)) seen.set(f.stock.code, f);
+      continue;
+    }
+    if (!/[\u0600-\u06ff]/.test(w)) continue;
+    // Arabic: a whole name only (one or two words), with و/ب/ل/ف in front taken off
+    for (const cand of [words[i + 1] ? `${w} ${words[i + 1]}` : null, w]) {
+      if (!cand) continue;
+      const f = exactArabic(cand);
+      if (f && !seen.has(f.stock.code)) {
+        seen.set(f.stock.code, f);
+        if (cand.includes(" ")) i++;
+        break;
+      }
+    }
+  }
+  return [...seen.values()].slice(0, 3);
+}
+export async function chat(text, chatId = "me", { positions = [] } = {}) {
+  const hist = chats.get(chatId) || [];
+  const found = stocksIn(text);
+  const readings = (await Promise.all(found.map((f) => plainReading(f).catch(() => null)))).filter(Boolean);
+  const pos = positions.length ? `صفقات فيصل المفتوحة:\n${positions.map((t) => `${t.code}: ${t.qty ? `${t.qty} سهم ` : ""}بتكلفة ${t.entry}، الوقف ${t.stop}، آخر سعر ${t.last}`).join("\n")}` : "";
+  const prompt = [
+    hist.length ? `المحادثة قبل:\n${hist.map((h) => `${h.role === "me" ? "فيصل" : "أنت"}: ${h.text}`).join("\n")}` : "",
+    pos,
+    readings.length ? `بيانات الأسهم المذكورة (الحين):\n${readings.join("\n\n")}` : "",
+    `رسالة فيصل الحين: ${text}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const reply = await write(CHAT_SYSTEM, prompt, { maxTokens: 3000 }).catch(() => null);
+  if (!reply) return "المحلل ما رد الحين (تأكد من مفتاح Claude في الإعدادات). تقدر تكتب رمز سهم وأعطيك قراءته.";
+  hist.push({ role: "me", text: String(text).slice(0, 600) }, { role: "ai", text: reply.slice(0, 1200) });
+  chats.set(chatId, hist.slice(-12));
+  return reply;
+}
+
+export async function answer(text, chatId = "me") {
+  const t = String(text).trim();
+  if (/^\/?(start|help|مساعدة|\?|؟)$/i.test(t)) return HELP;
+  if (/^\/?(new|جديد)$/i.test(t)) {
+    chats.delete(chatId);
+    return "بدينا محادثة جديدة 👍";
+  }
+  // just a stock's name or code (a word or two): its reading; anything else: a talk with the analyst
+  const words = t.split(/\s+/).length;
+  const arabic = /[\u0600-\u06ff]/.test(t);
+  const found = words > 3 ? null : !arabic ? findStock(t) : exactArabic(t) || (words === 1 ? findStock(t) : null);
+  if (!found) return chat(t, chatId, { positions: trades.list().filter((x) => x.mine) });
   const { market, stock } = found;
   const get = (tf, n) => getCandles(stock.symbol, tf, n).then((x) => x.candles || []).catch(() => []);
   const [d, w, h4, h1, m15] = await Promise.all([get("1D", 300), get("1W", 200), get("4h", 300), get("1h", 300), get("15m", 300)]);

@@ -107,7 +107,7 @@ export async function pollTelegram({ wait = 0 } = {}) {
       if (!cmd && msg?.text && msg.chat && textHandler && mine(String(msg.chat.id))) {
         const chat = String(msg.chat.id);
         await tg("sendChatAction", { chat_id: chat, action: "typing" }).catch(() => {});
-        const reply = await textHandler(msg.text).catch((e) => `صار خطأ: ${e.message}`);
+        const reply = await textHandler(msg.text, chat).catch((e) => `صار خطأ: ${e.message}`);
         if (reply) await tg("sendMessage", { chat_id: chat, text: reply.slice(0, 4000), disable_web_page_preview: true }).catch(() => {});
         continue;
       }
