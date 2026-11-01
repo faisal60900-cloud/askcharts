@@ -517,6 +517,8 @@ async function handle(req, res) {
       if (req.method === "POST") return send(res, 200, { codes: watchlist.set((await readBody(req, 1e4)).codes || []) });
       return send(res, 200, { codes: watchlist.codes() });
     }
+    // stop following a position (you closed it): { key: "kw:ALSAFAT" }
+    if (p === "/api/trades/close" && req.method === "POST") return send(res, 200, { ok: trades.remove(String((await readBody(req, 1e3)).key || "")) });
     if (p === "/api/trades") return send(res, 200, { open: trades.list(), closed: trades.closed().slice(0, 50) });
     if (p === "/api/trades/check" && req.method === "POST") return send(res, 200, { us: await uswatch.checkTrades(), kw: await kwwatch.checkTrades(), sa: await sawatch.checkTrades(), ae: await aewatch.checkTrades() });
     // ---------- the Kuwait entry signal tested on the market's history ----------
