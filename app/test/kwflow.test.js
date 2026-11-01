@@ -27,9 +27,19 @@ test("the messages: buying takes over once, the block once, a level taken back",
   const low = F.today([b(0, 128, 100000, 127, 129)], 3e6);
   assert.deepEqual(F.events("TEST", low, 3e6, { levels: [130] }, mem).length, 0);
   const d = F.today([b(0, 128, 100000, 127, 129), b(1, 131, 1200000, 128, 131)], 3e6);
+  assert.deepEqual(F.events("TEST", d, 3e6, { levels: [130] }, mem), [], "the first look only notes it");
   const ev = F.events("TEST", d, 3e6, { levels: [130] }, mem);
   assert.ok(ev.some((e) => /سيولة شراء داخلة/.test(e)));
   assert.ok(ev.some((e) => /صفقة شراء كبيرة/.test(e)));
   assert.ok(ev.some((e) => /رجع فوق 130/.test(e)));
   assert.equal(F.events("TEST", d, 3e6, { levels: [130] }, mem).length, 0, "once");
+});
+
+test("a block that disappears on the next look (a data error) is never sent", () => {
+  const mem = {};
+  const big = F.today([b(0, 121, 100000, 120, 122), b(1, 122, 7860000, 121, 122)], 3e6);
+  assert.deepEqual(F.events("GLITCH", big, 3e6, {}, mem).filter((e) => /صفقة/.test(e)), []);
+  const fixed = F.today([b(0, 121, 100000, 120, 122), b(1, 122, 84000, 121, 122)], 3e6);
+  assert.deepEqual(F.events("GLITCH", fixed, 3e6, {}, mem).filter((e) => /صفقة/.test(e)), []);
+  assert.deepEqual(F.events("GLITCH", fixed, 3e6, {}, mem).filter((e) => /صفقة/.test(e)), []);
 });

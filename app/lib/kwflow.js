@@ -52,22 +52,38 @@ export function events(code, d, avgDay, cfg, mem) {
   const ev = [];
   if (!d) return ev;
   const key = (k) => `${code}|${k}|${d.day}`;
+  // Yahoo's newest Kuwaiti bars are sometimes wrong and corrected minutes later (a 5-minute bar of
+  // 7.9 million shares on 1 Nov 2026 became 84,000): an alert goes out only when a second look, a
+  // few minutes on, still shows the same thing.
+  const seen = (k, ok) => {
+    const p = `pend|${k}`;
+    if (!ok) {
+      delete mem[p];
+      return false;
+    }
+    if (mem[k]) return false;
+    if (!mem[p]) {
+      mem[p] = 1;
+      return false;
+    }
+    delete mem[p];
+    mem[k] = 1;
+    return true;
+  };
   // buying takes over: 60%+ of the day's volume, with at least a third of a usual day traded
-  if (d.buyPct >= 60 && d.volume >= avgDay / 3 && !mem[key("inflow")]) {
-    mem[key("inflow")] = 1;
+  if (seen(key("inflow"), d.buyPct >= 60 && d.volume >= avgDay / 3)) {
     ev.push(`💧🟢🇰🇼 ${code}: سيولة شراء داخلة\nالشراء ${d.buyPct}% من تداول اليوم (${big(d.volume)} سهم) · السعر ${d.price} فلس\nأول مرة اليوم يصير الشراء هو الغالب بوضوح.`);
   }
+  const now = new Set(d.blocks.map((b) => key(`block${b.time}|${b.kind}`)));
+  for (const k of Object.keys(mem)) if (k.startsWith(`pend|${code}|block`) && k.endsWith(d.day) && !now.has(k.slice(5))) delete mem[k];
   for (const b of d.blocks) {
-    const k = key(`block${b.time}`);
-    if (mem[k]) continue;
-    mem[k] = 1;
+    if (!seen(key(`block${b.time}|${b.kind}`), true)) continue;
     ev.push(b.kind === "buy" ? `🐋🟢🇰🇼 ${code}: صفقة شراء كبيرة\n${big(b.volume)} سهم الساعة ${b.at} على ${b.price} فلس (السعر سكّر قرب أعلى الفترة)` : `🐋🔴🇰🇼 ${code}: صفقة بيع كبيرة\n${big(b.volume)} سهم الساعة ${b.at} على ${b.price} فلس (السعر سكّر قرب أدنى الفترة)`);
   }
   for (const lv of cfg.levels || []) {
     const below = `${code}|${lv}`;
     if (d.price < lv) st.below[below] = true;
-    else if (st.below[below] && d.price >= lv && !mem[key(`lv${lv}`)]) {
-      mem[key(`lv${lv}`)] = 1;
+    else if (seen(key(`lv${lv}`), st.below[below] && d.price >= lv)) {
       delete st.below[below];
       ev.push(`📈🇰🇼 ${code}: رجع فوق ${lv} فلس\nالسعر ${d.price} فلس · الشراء اليوم ${d.buyPct}% · ${big(d.volume)} سهم`);
     }
