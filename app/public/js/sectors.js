@@ -12,7 +12,7 @@ const timers = {};
 
 export function renderSectors(box, app, market = "kw") {
   const kw = market === "kw";
-  box.innerHTML = `<div class="sec-wrap" dir="rtl"><div class="sec-head"><b>${kw ? "🇰🇼 قطاعات السوق الكويتي" : "🇺🇸 قطاعات السوق الأمريكي"}</b><span class="hint-text" id="secAt"></span><button class="btn" id="secRefresh">تحديث</button></div><div id="secBody"><div class="pad hint-text">يقرأ ${kw ? "كل أسهم بورصة الكويت (أقل من دقيقة)" : "صناديق القطاعات الأمريكية"}…</div></div></div>`;
+  box.innerHTML = `<div class="sec-wrap" dir="rtl"><div class="sec-head"><b>${kw ? "🇰🇼 قطاعات السوق الكويتي" : "🇺🇸 قطاعات السوق الأمريكي"}</b><span class="hint-text" id="secAt"></span><button class="btn" id="secRefresh">تحديث</button><button class="btn" id="secOnChart"></button></div><div id="secBody"><div class="pad hint-text">يقرأ ${kw ? "كل أسهم بورصة الكويت (أقل من دقيقة)" : "صناديق القطاعات الأمريكية"}…</div></div></div>`;
   const body = box.querySelector("#secBody");
   async function load(fresh = false) {
     try {
@@ -51,6 +51,13 @@ export function renderSectors(box, app, market = "kw") {
     }
   }
   box.querySelector("#secRefresh").onclick = () => load(true);
+  const onChart = box.querySelector("#secOnChart");
+  const label = () => (onChart.textContent = app.sectorOverlay?.isOn() ? "إخفاء من الشارت" : "عرض على الشارت");
+  label();
+  onChart.onclick = () => {
+    app.sectorOverlay?.set(!app.sectorOverlay.isOn());
+    label();
+  };
   clearInterval(timers[market]);
   timers[market] = setInterval(() => (box.querySelector(".sec-wrap") ? load() : clearInterval(timers[market])), 3 * 60e3);
   load();

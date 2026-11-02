@@ -28,6 +28,7 @@ import { openAlertDialog as openAlertCard, isChannel, isMoving } from "./alertdi
 import { PRODUCTS, SOCIAL, ALL_PRODUCTS, DEFAULT_FAVORITES } from "./products.js";
 import { renderReader, readerChanged } from "./marketreader.js";
 import { initReaderOverlay } from "./readeroverlay.js";
+import { initSectorOverlay } from "./sectoroverlay.js";
 import { renderKwScan } from "./kwscanner.js";
 import { renderSectors } from "./sectors.js";
 
@@ -2654,6 +2655,7 @@ export function initPanels(app) {
   renderRail();
   showSide(sideTab);
   app.readerOverlay = initReaderOverlay(app);
+  app.sectorOverlay = initSectorOverlay(app);
   app.onReaderOverlay = () => sideTab === "reader" && renderSide();
   return P;
 }
