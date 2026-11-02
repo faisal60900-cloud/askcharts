@@ -16,6 +16,7 @@ import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
 import * as prealert from "./prealert.js";
 import * as watchlist from "./watchlist.js";
+import * as usflow from "./usflow.js";
 import { about, aboutLine } from "./about.js";
 
 // light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
@@ -430,6 +431,11 @@ async function tick() {
     if (mk.open && m.min >= 10 * 60 && Date.now() - (state.lastWatchAt || 0) >= 5 * 60e3) {
       state.lastWatchAt = Date.now();
       await watchlist.check((text, code) => send(text, { symbol: `US:${code}`, name: "" }), m.date, (code) => about({ code, en: code }, "us"));
+    }
+    // unusual money in your US stocks (lib/usflow.js): every 3 minutes in the session
+    if (mk.open && Date.now() - (state.lastFlowAt || 0) >= 3 * 60e3) {
+      state.lastFlowAt = Date.now();
+      usflow.check((text, code) => send(text, { symbol: `US:${code}`, name: "" })).catch(() => {});
     }
     if (mk.open && Date.now() - state.lastScanAt >= (d.fast ? 5 : cfg.every) * 60e3) await runOnce();
     // between full scans, every minute: the stocks closest to a breakout, so a break is caught fast
