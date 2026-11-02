@@ -29,6 +29,7 @@ import { PRODUCTS, SOCIAL, ALL_PRODUCTS, DEFAULT_FAVORITES } from "./products.js
 import { renderReader, readerChanged } from "./marketreader.js";
 import { initReaderOverlay } from "./readeroverlay.js";
 import { renderKwScan } from "./kwscanner.js";
+import { renderSectors } from "./sectors.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const LW = window.LightweightCharts;
@@ -458,6 +459,8 @@ export function initPanels(app) {
         usscan: () => renderKwScan(bottom, app, "us"),
         sascan: () => renderKwScan(bottom, app, "sa"),
         aescan: () => renderKwScan(bottom, app, "ae"),
+        kwsectors: () => renderSectors(bottom, app, "kw"),
+        ussectors: () => renderSectors(bottom, app, "us"),
         screener: renderScreener,
         heatmap: renderHeatmap,
         seasonals: () => renderSeasonals(bottom, app),

@@ -23,6 +23,7 @@ import * as trades from "./lib/trades.js";
 import * as tgbot from "./lib/tgbot.js";
 import * as watchlist from "./lib/watchlist.js";
 import * as kwflow from "./lib/kwflow.js";
+import { sectors } from "./lib/sectors.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
 import * as copilot from "./lib/copilot.js";
@@ -513,6 +514,7 @@ async function handle(req, res) {
       return send(res, 200, { list: kwflow.list() });
     }
     if (p === "/api/kwflow/check" && req.method === "POST") return send(res, 200, await kwflow.check(async () => {}));
+    if (p === "/api/sectors") return send(res, 200, await sectors(q.market, { fresh: q.fresh === "1" }));
     if (p === "/api/watchlist") {
       if (req.method === "POST") return send(res, 200, { codes: watchlist.set((await readBody(req, 1e4)).codes || []) });
       return send(res, 200, { codes: watchlist.codes() });

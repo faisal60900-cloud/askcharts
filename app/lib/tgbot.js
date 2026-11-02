@@ -16,6 +16,8 @@ import { flowText } from "./flow.js";
 import * as trades from "./trades.js";
 import * as store from "./store.js";
 import { about, aboutLine } from "./about.js";
+import { sectors } from "./sectors.js";
+import { sectorsText } from "../public/lib/sectors.js";
 export { flowText };
 
 const LISTS = [
@@ -99,7 +101,7 @@ export function readingText({ market, stock }, row, r, note = null, today = null
     .join("\n");
 }
 
-const HELP = "اكتب لي رمز السهم أو اسمه، وأرد عليك بتحليله:\n🇰🇼 KFH أو بيتك · NBK أو الوطني\n🇸🇦 2222 أو أرامكو · 1120 أو الراجحي\n🇦🇪 EMAAR أو إعمار\n🇺🇸 SPCX · NVDA · AAPL\n(لسهم أمريكي رمزه يشبه سهم خليجي اكتب: us STC)";
+const HELP = "اكتب لي رمز السهم أو اسمه، وأرد عليك بتحليله:\n🇰🇼 KFH أو بيتك · NBK أو الوطني\n🇸🇦 2222 أو أرامكو · 1120 أو الراجحي\n🇦🇪 EMAAR أو إعمار\n🇺🇸 SPCX · NVDA · AAPL\n(لسهم أمريكي رمزه يشبه سهم خليجي اكتب: us STC)\n\n📊 قطاعات: سيولة قطاعات الكويت · قطاعات امريكا: قطاعات السوق الأمريكي";
 
 // The reading without the analyst's note, for a stock found from what was typed (or null).
 async function plainReading(found) {
@@ -192,6 +194,12 @@ export const setChat = (on) => (store.write("tgbot", { chat: !!on }), !!on);
 export async function answer(text, chatId = "me") {
   const t = String(text).trim();
   if (/^\/?(start|help|مساعدة|\?|؟)$/i.test(t)) return HELP;
+  // where the money is going, sector by sector: "قطاعات" (Kuwait) or "قطاعات امريكا"
+  const sec = t.match(/^\/?(?:قطاعات|القطاعات|sectors)\s*(امريكا|أمريكا|الامريكي|الأمريكي|us|الكويت|kw)?$/i);
+  if (sec) {
+    const market = /امريكا|أمريكا|مريكي|us/i.test(sec[1] || "") ? "us" : "kw";
+    return sectorsText(await sectors(market), market);
+  }
   if (/^\/?(new|جديد)$/i.test(t)) {
     chats.delete(chatId);
     return "بدينا محادثة جديدة 👍";

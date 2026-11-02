@@ -2937,3 +2937,13 @@ button.sr-chip:hover { background: var(--chrome-hover); }
 .kw-tg ol { margin: 4px 0; padding-inline-start: 18px; line-height: 1.7; }
 .kw-tg code { background: var(--hover); padding: 1px 5px; border-radius: 4px; }
 .kw-bt { margin-top: 6px; } .kw-bt td, .kw-bt th { padding: 3px 8px; }
+
+/* قطاعات السوق */
+.sec-wrap { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; }
+.sec-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sec-sum { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; }
+.sec-t td.sec-good, .sec-good { color: var(--up); }
+.sec-t td.sec-bad, .sec-bad { color: var(--down); }
+.sec-hot { color: #f59e0b; }
+.sec-cold { color: #60a5fa; }
+.sec-t tr[data-s] { cursor: pointer; }
