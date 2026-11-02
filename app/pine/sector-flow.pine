@@ -1,0 +1,229 @@
+//@version=6
+// قطاعات السوق (Sector Flow) — Kuwait sectors and US sector funds: today's money, how busy each
+// sector is against a usual day by this time of the session, the buying share (where each daily
+// bar closed in its range), the five days before, the flow (receiving, improving, losing), the
+// strongest sector and where the money is moving from and to. Same rules as AskCharts.
+// Each sector is read from its biggest stocks (editable below); up to 40 symbols in all.
+indicator("قطاعات السوق · Sector Flow", overlay = true, max_labels_count = 1)
+
+// ───────── inputs
+mkt      = input.string("الكويت", "السوق", options = ["الكويت", "أمريكا"])
+pos_in   = input.string("أعلى اليمين", "مكان الجدول", options = ["أعلى اليمين", "أعلى اليسار", "أسفل اليمين", "أسفل اليسار"])
+fils     = input.bool(true, "أسعار الكويت بالفلس (تقسيم على 1000)")
+txtSize  = input.string("صغير", "حجم الخط", options = ["صغير جدًا", "صغير", "عادي"])
+
+grpK = "قطاعات الكويت (رموز TradingView مفصولة بفاصلة)"
+k1  = input.string("KSE:NBK,KSE:KFH,KSE:BOUBYAN,KSE:GBK,KSE:BURG,KSE:WARBABANK", "البنوك", group = grpK)
+k2  = input.string("KSE:KPROJ,KSE:KAMCO,KSE:MARKAZ,KSE:ALIMTIAZ,KSE:ARZAN,KSE:ALSAFAT", "الخدمات المالية", group = grpK)
+k3  = input.string("KSE:MABANEE,KSE:NRE,KSE:URC,KSE:SRE", "العقار", group = grpK)
+k4  = input.string("KSE:AGLTY,KSE:NIND,KSE:CABLE,KSE:SHIP", "الصناعة", group = grpK)
+k5  = input.string("KSE:ZAIN,KSE:STC,KSE:OOREDOO", "الاتصالات", group = grpK)
+k6  = input.string("KSE:JAZEERA,KSE:HUMANSOFT,KSE:ALG", "الخدمات الاستهلاكية", group = grpK)
+k7  = input.string("KSE:MEZZAN", "السلع الاستهلاكية", group = grpK)
+k8  = input.string("KSE:GINS,KSE:AINS", "التأمين", group = grpK)
+k9  = input.string("KSE:IPG,KSE:NAPESCO", "الطاقة", group = grpK)
+k10 = input.string("KSE:BPCC", "المواد الأساسية", group = grpK)
+k11 = input.string("KSE:ATC", "الرعاية الصحية", group = grpK)
+k12 = input.string("KSE:ASC", "التكنولوجيا", group = grpK)
+k13 = input.string("KSE:AZNOULA", "المنافع", group = grpK)
+
+grpU = "قطاعات أمريكا (صناديق القطاعات)"
+u1  = input.string("AMEX:XLK", "التقنية", group = grpU)
+u2  = input.string("NASDAQ:SMH", "الشرائح", group = grpU)
+u3  = input.string("AMEX:XLC", "الاتصالات والإعلام", group = grpU)
+u4  = input.string("AMEX:XLY", "الاستهلاكي الكمالي", group = grpU)
+u5  = input.string("AMEX:XLP", "الاستهلاكي الأساسي", group = grpU)
+u6  = input.string("AMEX:XLF", "المالية والبنوك", group = grpU)
+u7  = input.string("AMEX:XLV", "الرعاية الصحية", group = grpU)
+u8  = input.string("AMEX:XLI", "الصناعة", group = grpU)
+u9  = input.string("AMEX:XLE", "الطاقة", group = grpU)
+u10 = input.string("AMEX:XLB", "المواد الأساسية", group = grpU)
+u11 = input.string("AMEX:XLU", "المنافع", group = grpU)
+u12 = input.string("AMEX:XLRE", "العقار", group = grpU)
+
+// ───────── what each symbol's daily bars say
+dayStats() =>
+    v    = volume * close
+    rng  = high - low
+    p    = rng > 0 ? (close - low) / rng : 0.5
+    avg  = ta.sma(v, 20)[1]
+    v5   = math.sum(v, 5)[1]
+    b5   = math.sum(v * p, 5)[1]
+    chg  = close[1] > 0 ? (close / close[1] - 1) * 100 : 0.0
+    [v, avg, v * p, v5, b5, v[1], chg, time]
+
+// how far through today's session a daily bar stamped t is (1 when it is a finished day)
+kwFrac(t) =>
+    tz = "Asia/Kuwait"
+    today = year(t, tz) == year(timenow, tz) and month(t, tz) == month(timenow, tz) and dayofmonth(t, tz) == dayofmonth(timenow, tz)
+    mins = hour(timenow, tz) * 60 + minute(timenow, tz)
+    today ? math.max(0.05, math.min(1.0, (mins - 540) / 220.0)) : 1.0
+
+usShare(m) =>
+    // a typical US day: heavy open and close, light midday
+    xs = array.from(0.0, 30.0, 90.0, 150.0, 210.0, 270.0, 330.0, 360.0, 390.0)
+    ys = array.from(0.03, 0.15, 0.30, 0.42, 0.52, 0.62, 0.75, 0.83, 1.0)
+    float out = 1.0
+    if m <= 0
+        out := 0.03
+    else if m < 390
+        for k = 1 to 8
+            if m <= array.get(xs, k)
+                x0 = array.get(xs, k - 1)
+                x1 = array.get(xs, k)
+                out := array.get(ys, k - 1) + (array.get(ys, k) - array.get(ys, k - 1)) * (m - x0) / (x1 - x0)
+                break
+    out
+
+usFrac(t) =>
+    tz = "America/New_York"
+    today = year(t, tz) == year(timenow, tz) and month(t, tz) == month(timenow, tz) and dayofmonth(t, tz) == dayofmonth(timenow, tz)
+    mins = hour(timenow, tz) * 60 + minute(timenow, tz) - 570
+    today ? math.max(0.03, usShare(mins)) : 1.0
+
+fmtMoney(v, isKw) =>
+    cur = isKw ? " د.ك" : " $"
+    v >= 1e9 ? str.tostring(v / 1e9, "#.##") + " مليار" + cur : v >= 1e6 ? str.tostring(v / 1e6, "#.##") + " مليون" + cur : str.tostring(v / 1e3, "#.#") + " ألف" + cur
+
+sgn(x) => na(x) ? "—" : (x > 0 ? "+" : "") + str.tostring(x, "#.#") + "%"
+
+// ───────── colors
+cBg    = color.new(#0f1722, 0)
+cHead  = color.new(#1e2a3a, 0)
+cTxt   = color.white
+cMuted = color.new(#9aa6b5, 0)
+cGood  = color.new(#16794a, 0)
+cBad   = color.new(#a12a2a, 0)
+cHot   = color.new(#d9822b, 0)
+cCold  = color.new(#2557a8, 0)
+cNorm  = color.new(#3a4554, 0)
+cPurp  = color.new(#7b3fa0, 0)
+
+// ───────── read every symbol on every bar (requests can't start on a live bar), draw on the last
+var table tb = table.new(position.top_right, 9, 18)
+isKw   = mkt == "الكويت"
+names  = isKw ? array.from("البنوك", "الخدمات المالية", "العقار", "الصناعة", "الاتصالات", "الخدمات الاستهلاكية", "السلع الاستهلاكية", "التأمين", "الطاقة", "المواد الأساسية", "الرعاية الصحية", "التكنولوجيا", "المنافع") : array.from("التقنية", "الشرائح", "الاتصالات والإعلام", "الاستهلاكي الكمالي", "الاستهلاكي الأساسي", "المالية والبنوك", "الرعاية الصحية", "الصناعة", "الطاقة", "المواد الأساسية", "المنافع", "العقار")
+lists  = isKw ? array.from(k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13) : array.from(u1, u2, u3, u4, u5, u6, u7, u8, u9, u10, u11, u12)
+scale  = isKw and fils ? 0.001 : 1.0
+n      = array.size(names)
+aVal   = array.new_float(n, 0.0)
+aAvg   = array.new_float(n, 0.0)
+aBuy   = array.new_float(n, 0.0)
+aV5    = array.new_float(n, 0.0)
+aB5    = array.new_float(n, 0.0)
+aPrev  = array.new_float(n, 0.0)
+aChgW  = array.new_float(n, 0.0)
+aUp    = array.new_int(n, 0)
+aDn    = array.new_int(n, 0)
+aRead  = array.new_int(n, 0)
+aFrac  = array.new_float(n, 1.0)
+for i = 0 to n - 1
+    syms = str.split(array.get(lists, i), ",")
+    for s in syms
+        sym = str.replace_all(s, " ", "")
+        if str.length(sym) > 0
+            [v, avg, b, v5, b5, pv, chg, t] = request.security(sym, "D", dayStats(), ignore_invalid_symbol = true, lookahead = barmerge.lookahead_off)
+            if not na(v) and not na(avg)
+                fr = isKw ? kwFrac(t) : usFrac(t)
+                array.set(aVal, i, array.get(aVal, i) + v * scale)
+                array.set(aAvg, i, array.get(aAvg, i) + avg * scale * fr)
+                array.set(aBuy, i, array.get(aBuy, i) + b * scale)
+                array.set(aV5, i, array.get(aV5, i) + nz(v5) * scale)
+                array.set(aB5, i, array.get(aB5, i) + nz(b5) * scale)
+                array.set(aPrev, i, array.get(aPrev, i) + nz(pv) * scale)
+                array.set(aChgW, i, array.get(aChgW, i) + v * scale * chg)
+                array.set(aFrac, i, fr)
+                array.set(aRead, i, array.get(aRead, i) + 1)
+                if chg > 0
+                    array.set(aUp, i, array.get(aUp, i) + 1)
+                if chg < 0
+                    array.set(aDn, i, array.get(aDn, i) + 1)
+
+// per sector numbers and the score to rank by
+total = array.sum(aVal)
+aRel   = array.new_float(n, 0.0)
+aBP    = array.new_float(n, 50.0)
+aB5P   = array.new_float(n, 50.0)
+aChg   = array.new_float(n, 0.0)
+aScore = array.new_float(n, -1e9)
+aFlow  = array.new_string(n, "")
+aFlowC = array.new_color(n, cNorm)
+totBuy = 0.0
+totAvg = 0.0
+for i = 0 to n - 1
+    v = array.get(aVal, i)
+    if array.get(aRead, i) > 0 and v > 0
+        rel  = array.get(aAvg, i) > 0 ? v / array.get(aAvg, i) : 0.0
+        bp   = array.get(aBuy, i) / v * 100
+        b5p  = array.get(aV5, i) > 0 ? array.get(aB5, i) / array.get(aV5, i) * 100 : 50.0
+        chg  = array.get(aChgW, i) / v
+        array.set(aRel, i, rel)
+        array.set(aBP, i, bp)
+        array.set(aB5P, i, b5p)
+        array.set(aChg, i, chg)
+        small = total > 0 and v < total * 0.02
+        array.set(aScore, i, (bp - 50) / 10 + math.min(3, rel) + math.max(-3, math.min(3, chg)) / 2 - (small ? 1000 : 0))
+        flow = bp >= 58 and rel >= 0.8 ? "📥 يستقبل" : bp <= 42 ? "📤 يفقد" : bp - b5p >= 8 ? "↗ يتحسن" : b5p - bp >= 8 ? "↘ يضعف" : "➡ مستقر"
+        array.set(aFlow, i, flow)
+        array.set(aFlowC, i, bp >= 58 and rel >= 0.8 ? cGood : bp <= 42 ? cBad : bp - b5p >= 8 ? cGood : b5p - bp >= 8 ? cPurp : cNorm)
+        totBuy += array.get(aBuy, i)
+        totAvg += array.get(aAvg, i)
+idx = array.sort_indices(aScore, order.descending)
+buyAll = total > 0 ? totBuy / total * 100 : 50.0
+relAll = totAvg > 0 ? total / totAvg : 0.0
+state  = buyAll >= 55 ? "🔥 ساخن، الشراء غالب" : buyAll <= 45 ? "❄ بارد، البيع غالب" : "⚖ متوازن"
+hot    = array.get(idx, 0)
+// where the money leaves from: the weakest big sector that is losing or weakening
+fromI  = -1
+worst  = 1e9
+for i = 0 to n - 1
+    sc = array.get(aScore, i)
+    fl = array.get(aFlow, i)
+    if sc > -500 and (str.contains(fl, "يفقد") or str.contains(fl, "يضعف")) and sc < worst and i != hot
+        worst := sc
+        fromI := i
+
+// ───────── the table
+if barstate.islast
+    tPos = pos_in == "أعلى اليمين" ? position.top_right : pos_in == "أعلى اليسار" ? position.top_left : pos_in == "أسفل اليمين" ? position.bottom_right : position.bottom_left
+    sz = txtSize == "صغير جدًا" ? size.tiny : txtSize == "صغير" ? size.small : size.normal
+    table.delete(tb)
+    tb := table.new(tPos, 9, n + 5, bgcolor = cBg, border_color = color.new(#2b3646, 0), border_width = 1)
+    table.cell(tb, 0, 0, (isKw ? "🇰🇼 قطاعات الكويت" : "🇺🇸 قطاعات أمريكا"), text_color = cTxt, bgcolor = cHead, text_size = sz)
+    table.merge_cells(tb, 0, 0, 2, 0)
+    table.cell(tb, 3, 0, state, text_color = cTxt, bgcolor = buyAll >= 55 ? cGood : buyAll <= 45 ? cBad : cNorm, text_size = sz)
+    table.merge_cells(tb, 3, 0, 5, 0)
+    table.cell(tb, 6, 0, "الشراء " + str.tostring(buyAll, "#") + "% · السيولة " + str.tostring(relAll, "#.##") + "x", text_color = cTxt, bgcolor = cHead, text_size = sz)
+    table.merge_cells(tb, 6, 0, 8, 0)
+    table.cell(tb, 0, 1, "🔥 الأقوى: " + array.get(names, hot), text_color = cTxt, bgcolor = cHot, text_size = sz)
+    table.merge_cells(tb, 0, 1, 3, 1)
+    table.cell(tb, 4, 1, fromI >= 0 ? "🔄 الانتقال: " + array.get(names, fromI) + " ← " + array.get(names, hot) : "🔄 لا انتقال واضح", text_color = cTxt, bgcolor = cPurp, text_size = sz)
+    table.merge_cells(tb, 4, 1, 8, 1)
+    heads = array.from("#", "القطاع", "سيولة اليوم", "النشاط", "الحرارة", "الشراء%", "5 أيام%", "التدفق", "التغير")
+    for c = 0 to 8
+        table.cell(tb, c, 2, array.get(heads, c), text_color = cMuted, bgcolor = cHead, text_size = sz)
+    for r = 0 to n - 1
+        i = array.get(idx, r)
+        row = r + 3
+        if array.get(aRead, i) == 0
+            table.cell(tb, 0, row, str.tostring(r + 1), text_color = cMuted, text_size = sz)
+            table.cell(tb, 1, row, array.get(names, i), text_color = cMuted, text_size = sz)
+            table.cell(tb, 2, row, "ما في بيانات", text_color = cMuted, text_size = sz)
+            table.merge_cells(tb, 2, row, 8, row)
+        else
+            rel = array.get(aRel, i)
+            bp  = array.get(aBP, i)
+            chg = array.get(aChg, i)
+            heat = rel >= 1.5 ? "🔥 ساخن" : rel >= 1 ? "🟢 نشط" : rel >= 0.6 ? "⚪ طبيعي" : "🔵 بارد"
+            heatC = rel >= 1.5 ? cHot : rel >= 1 ? cGood : rel >= 0.6 ? cNorm : cCold
+            table.cell(tb, 0, row, str.tostring(r + 1), text_color = cTxt, text_size = sz)
+            table.cell(tb, 1, row, array.get(names, i) + " (" + str.tostring(array.get(aRead, i)) + ")", text_color = cTxt, text_size = sz)
+            table.cell(tb, 2, row, fmtMoney(array.get(aVal, i), isKw), text_color = cTxt, text_size = sz)
+            table.cell(tb, 3, row, str.tostring(rel, "#.##") + "x", text_color = cTxt, bgcolor = heatC, text_size = sz)
+            table.cell(tb, 4, row, heat, text_color = cTxt, bgcolor = heatC, text_size = sz)
+            table.cell(tb, 5, row, str.tostring(bp, "#") + "%", text_color = cTxt, bgcolor = bp >= 55 ? cGood : bp <= 45 ? cBad : cNorm, text_size = sz)
+            table.cell(tb, 6, row, str.tostring(array.get(aB5P, i), "#") + "%", text_color = cMuted, text_size = sz)
+            table.cell(tb, 7, row, array.get(aFlow, i), text_color = cTxt, bgcolor = array.get(aFlowC, i), text_size = sz)
+            table.cell(tb, 8, row, sgn(chg) + "  " + str.tostring(array.get(aUp, i)) + "↑" + str.tostring(array.get(aDn, i)) + "↓", text_color = chg > 0 ? color.new(#4cd391, 0) : chg < 0 ? color.new(#ff7a7a, 0) : cTxt, text_size = sz)
+    table.cell(tb, 0, n + 3, "📥 يستقبل: شراء 58%+ بسيولة طبيعية · 📤 يفقد: شراء 42% أو أقل · الشراء تقدير من مكان الإغلاق في مدى اليوم", text_color = cMuted, text_size = size.tiny)
+    table.merge_cells(tb, 0, n + 3, 8, n + 3)
