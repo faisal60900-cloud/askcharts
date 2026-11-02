@@ -58,14 +58,21 @@ export function today(bars5, avgDay = 0) {
   if (!t.length) return null;
   const vol = t.reduce((a, b) => a + b.volume, 0);
   const buy = t.reduce((a, b) => a + b.volume * pos(b), 0);
-  const usualBar = avgDay > 0 ? avgDay / 78 : [...t].sort((a, b) => a.volume - b.volume)[Math.floor(t.length / 2)].volume;
+  // what a usual day trades in a stretch of the session: heavy at the open and close, light at
+  // midday (the U-shaped day), so the open's busy bars aren't taken for unusual ones
+  const median = [...t].sort((a, b) => a.volume - b.volume)[Math.floor(t.length / 2)].volume;
+  const usual = (b, bars = 1) => {
+    const m = nyMin(b.time) - 570;
+    return avgDay > 0 ? avgDay * Math.max(0.004 * bars, usVolumeShare(m + 5 * bars) - usVolumeShare(m)) : median * bars;
+  };
   const blocks = t
-    .filter((b) => b.volume >= 4 * usualBar && b.volume * b.close >= 5e6)
-    .map((b) => ({ time: b.time, at: kwTime(b.time), volume: b.volume, price: b.close, x: b.volume / usualBar, kind: side(pos(b)) }))
+    .filter((b) => b.volume >= 4 * usual(b) && b.volume * b.close >= 5e6)
+    .map((b) => ({ time: b.time, at: kwTime(b.time), volume: b.volume, price: b.close, x: b.volume / usual(b), kind: side(pos(b)) }))
     .filter((b) => b.kind);
   const last3 = t.slice(-3);
   const v3 = last3.reduce((a, b) => a + b.volume, 0);
-  const surge = last3.length === 3 && v3 >= 3 * 3 * usualBar ? { x: v3 / (3 * usualBar), kind: side(last3.reduce((a, b) => a + b.volume * pos(b), 0) / v3) || "mixed", at: kwTime(last3[0].time), volume: v3 } : null;
+  const u3 = last3.length === 3 ? usual(last3[0], 3) : 0;
+  const surge = last3.length === 3 && v3 >= 3 * u3 ? { x: v3 / u3, kind: side(last3.reduce((a, b) => a + b.volume * pos(b), 0) / v3) || "mixed", at: kwTime(last3[0].time), volume: v3 } : null;
   const minNow = nyMin(t.at(-1).time) + 5 - 570;
   return { day, volume: vol, buyPct: Math.round((buy / vol) * 100), blocks, surge, price: t.at(-1).close, rel: avgDay > 0 ? vol / (avgDay * usVolumeShare(minNow)) : null };
 }
