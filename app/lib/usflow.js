@@ -17,8 +17,17 @@ import * as watchlist from "./watchlist.js";
 import { usVolumeShare } from "../public/lib/market-reader.js";
 
 let st = store.read("usflow", { list: { UBER: { levels: [72, 75] } }, sent: {}, below: { "UBER|72": true, "UBER|75": true } });
+// followed closely (تابع بشكل خاص): every 2% move up or down from yesterday's close, and their news
+st.follow ||= ["UBER", "ORCL"];
 const save = () => store.write("usflow", st);
 export const list = () => st.list;
+export const follow = () => st.follow;
+export function setFollow(codes) {
+  st.follow = [...new Set(codes.map((c) => String(c).toUpperCase().replace(/[^A-Z.]/g, "")).filter(Boolean))].slice(0, 10);
+  for (const c of st.follow) st.list[c] ||= { levels: [] };
+  save();
+  return st.follow;
+}
 export function setStock(code, { levels = [] } = {}) {
   st.list[String(code).toUpperCase()] = { levels: levels.map(Number).filter((v) => v > 0).sort((a, b) => a - b) };
   save();
@@ -33,6 +42,7 @@ export function removeStock(code) {
 export function watched() {
   const out = { ...Object.fromEntries(watchlist.codes().map((c) => [c, { levels: [] }])) };
   for (const t of trades.list("us")) if (t.mine) out[t.code] = { levels: [] };
+  for (const c of st.follow || []) out[c] ||= { levels: [] };
   return { ...out, ...st.list };
 }
 
@@ -114,6 +124,14 @@ export function events(code, d, cfg, mem, below = st.below) {
     const k = d.surge.kind;
     ev.push(`⚡${k === "buy" ? "🟢" : k === "sell" ? "🔴" : "⚪"}🇺🇸 ${code}: سيولة مفاجئة\nآخر 15 دقيقة (من ${d.surge.at}) انتداول ${big(d.surge.volume)} سهم، ${d.surge.x.toFixed(1)} ضعف المعتاد\nالاتجاه: ${k === "buy" ? "شراء" : k === "sell" ? "بيع" : "مختلط"} · السعر ${px(d.price)}`);
   }
+  // a followed stock: every 2% from yesterday's close, up or down
+  if (cfg.follow && d.prev > 0) {
+    const chg = (d.price / d.prev - 1) * 100;
+    const step = Math.trunc(chg / 2);
+    if (step !== 0 && seen(key(`move${step}`), true)) {
+      ev.push(`${step > 0 ? "📈🟢" : "📉🔴"}🇺🇸 ${code}: ${step > 0 ? "طالع" : "نازل"} ${chg > 0 ? "+" : ""}${chg.toFixed(1)}% اليوم\nالسعر ${px(d.price)} (إغلاق أمس ${px(d.prev)}) · الشراء اليوم ${d.buyPct}%${cfg.mine ? `\n${cfg.mine}` : ""}`);
+    }
+  }
   for (const lv of cfg.levels || []) {
     const b = `${code}|${lv}`;
     if (d.price < lv) below[b] = true;
@@ -131,7 +149,15 @@ export async function check(send) {
     const sym = `US:${code}`;
     const [b5, d1] = await Promise.all([getCandles(sym, "5m", 120).then((r) => r.candles || []).catch(() => []), getCandles(sym, "1D", 25).then((r) => r.candles || []).catch(() => [])]);
     const avgDay = d1.slice(-21, -1).reduce((a, b) => a + (b.volume || 0), 0) / Math.max(1, Math.min(20, d1.length - 1));
-    for (const text of events(code, today(b5, avgDay), cfg, st.sent)) {
+    const d = today(b5, avgDay);
+    if (d) {
+      const prevBar = d1.length && nyDay(d1.at(-1).time) === d.day ? d1.at(-2) : d1.at(-1);
+      d.prev = prevBar?.close || 0;
+    }
+    const followed = (st.follow || []).includes(code);
+    const own = trades.list("us").find((t) => t.mine && t.code === code);
+    const mine = own && own.qty && d ? `💰 صفقتك: ${own.qty} سهم من ${px(own.entry)} → ${(d.price - own.entry) * own.qty >= 0 ? "+" : ""}${Math.round((d.price - own.entry) * own.qty)}$` : "";
+    for (const text of events(code, d, { ...cfg, follow: followed, mine }, st.sent)) {
       await send(text, code).catch(() => {});
       n++;
     }

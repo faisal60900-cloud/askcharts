@@ -517,9 +517,10 @@ async function handle(req, res) {
     if (p === "/api/usflow") {
       if (req.method === "POST") {
         const b = await readBody(req, 1e4);
+        if (Array.isArray(b.follow)) return send(res, 200, { follow: usflow.setFollow(b.follow), list: usflow.list() });
         return send(res, 200, { list: b.remove ? usflow.removeStock(b.code) : usflow.setStock(b.code, b) });
       }
-      return send(res, 200, { list: usflow.list(), watched: Object.keys(usflow.watched()) });
+      return send(res, 200, { list: usflow.list(), follow: usflow.follow(), watched: Object.keys(usflow.watched()) });
     }
     if (p === "/api/usflow/check" && req.method === "POST") return send(res, 200, await usflow.check(async () => {}));
     if (p === "/api/kwflow/check" && req.method === "POST") return send(res, 200, await kwflow.check(async () => {}));

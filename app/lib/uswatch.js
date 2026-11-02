@@ -364,12 +364,14 @@ export async function radar() {
 export async function newsCheck() {
   const since = Date.now() - 5 * 86400e3;
   let sent = 0;
-  for (const [code, w] of Object.entries(state.watched)) {
-    if (w.since < since) {
+  // the stocks followed closely (lib/usflow.js) always get their news, every half hour
+  const followed = Object.fromEntries(usflow.follow().map((c) => [c, { symbol: `US:${c}`, en: c, since: Date.now() - 86400e3, keep: true, newsDay: null }]));
+  for (const [code, w] of Object.entries({ ...state.watched, ...followed })) {
+    if (!w.keep && w.since < since) {
       delete state.watched[code];
       continue;
     }
-    if (cfg.light && w.newsDay === ny().date) continue;
+    if (!w.keep && cfg.light && w.newsDay === ny().date) continue;
     const items = (await newsOf(w.symbol).catch(() => ({ items: [] }))).items.filter((h) => h.url && !state.newsSeen[h.url] && (h.time || Date.now()) >= w.since - 86400e3).slice(0, 3);
     if (!items.length) continue;
     for (const h of items) state.newsSeen[h.url] = Date.now();
@@ -448,7 +450,7 @@ async function tick() {
       await runOnce();
       await brief("close");
     }
-    if (cfg.news && d.news && Date.now() - state.lastNewsAt >= 30 * 60e3 && Object.keys(state.watched).length) await newsCheck();
+    if (cfg.news && d.news && Date.now() - state.lastNewsAt >= 30 * 60e3 && (Object.keys(state.watched).length || usflow.follow().length)) await newsCheck();
   } catch (e) {
     state.lastError = e.message;
     saveState();

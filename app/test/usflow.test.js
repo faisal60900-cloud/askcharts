@@ -40,3 +40,13 @@ test("the messages: sent on the second look, once, and a level taken back", () =
   assert.ok(ev.some((e) => /رجع فوق 65.5\$/.test(e)));
   assert.equal(F.events("X", d, { levels: [65.5] }, mem, below).length, 0);
 });
+
+test("a followed stock: a message for every 2% from yesterday's close, once each", () => {
+  const mem = {};
+  const d = F.today([b(0, 65, 100000), b(1, 67.2, 120000, 66.8, 67.3)], avgDay);
+  d.prev = 65.25;
+  F.events("UBER", d, { follow: true, mine: "💰 صفقتك" }, mem, {});
+  const ev = F.events("UBER", d, { follow: true, mine: "💰 صفقتك" }, mem, {});
+  assert.ok(ev.some((e) => /طالع \+3\.0% اليوم/.test(e) && /صفقتك/.test(e)), ev.join("\n"));
+  assert.equal(F.events("UBER", d, { follow: true }, mem, {}).filter((e) => /اليوم\n/.test(e)).length, 0);
+});
