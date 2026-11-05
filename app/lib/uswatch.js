@@ -17,6 +17,7 @@ import { flowFor } from "./flow.js";
 import * as prealert from "./prealert.js";
 import * as watchlist from "./watchlist.js";
 import * as usflow from "./usflow.js";
+import { movers } from "./premovers.js";
 import { about, aboutLine } from "./about.js";
 
 // light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
@@ -47,6 +48,8 @@ export function due(m, flags = {}) {
     pre: m.min >= 9 * 60 && m.min < 9 * 60 + 30 && !flags.pre,
     // the pre-market radar, before the opening auction (the opening cross is at 9:30)
     radar: m.min >= 9 * 60 + 15 && m.min < 9 * 60 + 30 && !flags.radar,
+    // the biggest pre-market movers and your stocks (lib/premovers.js), half an hour before the open
+    movers: m.min >= 9 * 60 && m.min < 9 * 60 + 25 && !flags.movers,
     // the first half hour: scan every 5 minutes, breakouts come early
     fast: m.min >= 9 * 60 + 30 && m.min < 10 * 60,
     open: m.min >= 9 * 60 + 40 && m.min < 11 * 60 && !flags.open,
@@ -408,7 +411,7 @@ export async function aiTest() {
 // ---------- the clock ----------
 // A brief or radar sent by hand (a button) before its time doesn't count as today's: only one sent
 // at or after its window opened does.
-const STARTS = { pre: 9 * 60, radar: 9 * 60 + 15, open: 9 * 60 + 40, close: 16 * 60 + 2 };
+const STARTS = { pre: 9 * 60, movers: 9 * 60, radar: 9 * 60 + 15, open: 9 * 60 + 40, close: 16 * 60 + 2 };
 export function scheduledFlags(date, briefs = state.briefs) {
   const out = {};
   for (const [k, at] of Object.entries(briefs[date] || {})) if (STARTS[k] != null && ny(new Date(at)).date === date && ny(new Date(at)).min >= STARTS[k]) out[k] = at;
@@ -422,6 +425,13 @@ async function tick() {
     const mk = m.weekday ? await usMarket().catch(() => ({ open: false, businessDay: true })) : { open: false, businessDay: false };
     if (!mk.businessDay) return;
     if (cfg.briefs && !cfg.light && d.pre) await brief("pre");
+    // sent in light mode too: one short message a day
+    if (d.movers) {
+      (state.briefs[m.date] ||= {}).movers = Date.now();
+      saveState();
+      const text = await movers({ size: cfg.size }).catch(() => "");
+      if (text) await send(text, { name: "" });
+    }
     if (d.radar && !cfg.light) {
       // marked first, so a failing feed doesn't retry it every minute
       (state.briefs[m.date] ||= {}).radar = Date.now();

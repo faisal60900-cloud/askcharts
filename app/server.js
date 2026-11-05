@@ -24,6 +24,7 @@ import * as tgbot from "./lib/tgbot.js";
 import * as watchlist from "./lib/watchlist.js";
 import * as kwflow from "./lib/kwflow.js";
 import * as usflow from "./lib/usflow.js";
+import * as premovers from "./lib/premovers.js";
 import { sectors } from "./lib/sectors.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
@@ -481,6 +482,7 @@ async function handle(req, res) {
     if (p === "/api/uswatch/ai-test" && req.method === "POST") return send(res, 200, await uswatch.aiTest());
     if (p === "/api/uswatch/preview") return send(res, 200, await uswatch.preview(q.code));
     if (p === "/api/uswatch/radar" && req.method === "POST") return send(res, 200, await uswatch.radar());
+    if (p === "/api/uswatch/movers" && req.method === "POST") return send(res, 200, { text: await premovers.movers({ size: uswatch.settings().size }) });
     for (const [k, W] of [["ae", aewatch]]) {
       if (p === `/api/${k}watch`) {
         if (req.method === "GET") return send(res, 200, W.settings());
