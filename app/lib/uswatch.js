@@ -384,7 +384,10 @@ export async function newsCheck() {
     for (const h of items) state.newsSeen[h.url] = Date.now();
     w.newsDay = ny().date;
     const ar = await ai(`ترجم هذه الأخبار عن سهم ${code} (${w.en}) للعربي، ولكل خبر سطرين: العنوان مترجم، ثم خلاصة قصيرة وهل يبدو إيجابي أو سلبي أو محايد للسهم وليش. لا تضف معلومات غير موجودة.\n\n${items.map((h, k) => `${k + 1}. ${h.title}\n${h.summary || ""}\n(${h.source || ""})`).join("\n\n")}`, 2500);
-    await send([`📰 أخبار ${code} (${w.en})`, ar || items.map((h) => `• ${h.title}`).join("\n"), items.map((h) => h.url).join("\n")].join("\n\n"), { symbol: w.symbol, name: "" });
+    // the price now (or the last pre/after-market trade), so the news reads against the stock
+    const q = (await nasdaqLiveQuotes([code], "stocks").catch(() => ({})))[code];
+    const px = q?.price > 0 ? `💵 السعر الحين: ${q.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}$${Number.isFinite(q.changePct) ? ` (${q.changePct > 0 ? "+" : ""}${q.changePct.toFixed(1)}% اليوم)` : ""}` : "";
+    await send([`📰 أخبار ${code} (${w.en})`, px, ar || items.map((h) => `• ${h.title}`).join("\n"), items.map((h) => h.url).join("\n")].filter(Boolean).join("\n\n"), { symbol: w.symbol, name: "" });
     sent += items.length;
   }
   for (const [u, at] of Object.entries(state.newsSeen)) if (Date.now() - at > 14 * 86400e3) delete state.newsSeen[u];
