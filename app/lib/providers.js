@@ -951,6 +951,19 @@ export async function nasdaqScreener(kind = "stocks") {
 }
 
 // Live quotes for US symbols, 20 per request.
+// The companies reporting results on a day (YYYY-MM-DD), from Nasdaq's earnings calendar:
+// { code, name, when: "pre" (before the open) | "post" (after the close) | "", cap, eps }.
+export async function nasdaqEarnings(date) {
+  const j = await cached(`nq:earn:${date}`, 60 * 60e3, () => getJson(`https://api.nasdaq.com/api/calendar/earnings?date=${date}`, NQ));
+  return (j?.data?.rows || []).map((r) => ({
+    code: String(r.symbol || "").toUpperCase(),
+    name: r.name || "",
+    when: /pre-market/.test(r.time || "") ? "pre" : /after-hours/.test(r.time || "") ? "post" : "",
+    cap: num(r.marketCap),
+    eps: r.epsForecast ? num(r.epsForecast) : null,
+  })).filter((r) => r.code);
+}
+
 export async function nasdaqLiveQuotes(tickers, defaultClass) {
   const etfs = defaultClass
     ? new Set()
