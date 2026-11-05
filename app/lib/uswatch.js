@@ -54,7 +54,8 @@ export function due(m, flags = {}) {
     fast: m.min >= 9 * 60 + 30 && m.min < 10 * 60,
     open: m.min >= 9 * 60 + 40 && m.min < 11 * 60 && !flags.open,
     close: m.min >= 16 * 60 + 2 && m.min < 17 * 60 + 30 && !flags.close,
-    news: m.min >= 7 * 60 && m.min < 18 * 60,
+    // until 20:00: results after the close come out between 16:00 and 18:00
+    news: m.min >= 7 * 60 && m.min < 20 * 60,
   };
 }
 
@@ -457,6 +458,12 @@ async function tick() {
       usflow.check((text, code) => send(text, { symbol: `US:${code}`, name: "" })).catch(() => {});
       // the ⭐ companies after their results: +5%, +10%, +15% (lib/premovers.js)
       checkTargets((text) => send(text, { name: "" })).catch(() => {});
+    }
+    // the followed stocks in extended hours (4:00–9:30 and 16:00–20:00): every 3% step, every 5 minutes
+    const ext = m.weekday && !mk.open ? (m.min >= 4 * 60 && m.min < 9 * 60 + 30 ? "pre" : m.min >= 16 * 60 && m.min < 20 * 60 ? "post" : null) : null;
+    if (ext && Date.now() - (state.lastExtAt || 0) >= 5 * 60e3 && usflow.follow().length) {
+      state.lastExtAt = Date.now();
+      usflow.extCheck((text, code) => send(text, { symbol: `US:${code}`, name: "" }), { session: ext, day: m.date }).catch(() => {});
     }
     if (mk.open && Date.now() - state.lastScanAt >= (d.fast ? 5 : cfg.every) * 60e3) await runOnce();
     // between full scans, every minute: the stocks closest to a breakout, so a break is caught fast

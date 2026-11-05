@@ -50,3 +50,16 @@ test("a followed stock: a message for every 2% from yesterday's close, once each
   assert.ok(ev.some((e) => /طالع \+3\.0% اليوم/.test(e) && /صفقتك/.test(e)), ev.join("\n"));
   assert.equal(F.events("UBER", d, { follow: true }, mem, {}).filter((e) => /اليوم\n/.test(e)).length, 0);
 });
+
+test("extended hours: a followed stock's every 3% step, once each, with the close it's measured from", async () => {
+  const { extEvents } = await import("../lib/usflow.js");
+  const mem = {};
+  assert.deepEqual(extEvents("IREN", { price: 18.3, changePct: 1.5 }, mem, { session: "post", day: "2026-11-05" }), []);
+  const a = extEvents("IREN", { price: 19.36, changePct: 7.38 }, mem, { session: "post", day: "2026-11-05" });
+  assert.equal(a.length, 1);
+  assert.match(a[0], /^🌙🟢🇺🇸 IREN: طالع \+7\.4% بعد الإغلاق\nالسعر 19\.36\$ \(إغلاق اليوم 18\.03\$\)/);
+  assert.equal(extEvents("IREN", { price: 19.4, changePct: 7.6 }, mem, { session: "post", day: "2026-11-05" }).length, 0);
+  assert.equal(extEvents("IREN", { price: 20, changePct: 10.9 }, mem, { session: "post", day: "2026-11-05" }).length, 1);
+  const d = extEvents("UBER", { price: 66, changePct: -3.2 }, mem, { session: "pre", day: "2026-11-06" });
+  assert.match(d[0], /^🌅🔴🇺🇸 UBER: نازل -3\.2% قبل الافتتاح\nالسعر 66\$ \(إغلاق أمس 68\.18\$\)/);
+});

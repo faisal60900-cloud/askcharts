@@ -10,7 +10,7 @@
 // Each once a day, and only when a second look a few minutes on shows the same thing (a wrong bar
 // from the feed is corrected before it is sent). Buying and selling are estimated from where each
 // bar closes in its range: the free feeds carry no trade-by-trade data.
-import { getCandles } from "./providers.js";
+import { getCandles, nasdaqLiveQuotes } from "./providers.js";
 import * as store from "./store.js";
 import * as trades from "./trades.js";
 import * as watchlist from "./watchlist.js";
@@ -23,7 +23,7 @@ const save = () => store.write("usflow", st);
 export const list = () => st.list;
 export const follow = () => st.follow;
 export function setFollow(codes) {
-  st.follow = [...new Set(codes.map((c) => String(c).toUpperCase().replace(/[^A-Z.]/g, "")).filter(Boolean))].slice(0, 10);
+  st.follow = [...new Set(codes.map((c) => String(c).toUpperCase().replace(/[^A-Z.]/g, "")).filter(Boolean))].slice(0, 15);
   for (const c of st.follow) st.list[c] ||= { levels: [] };
   save();
   return st.follow;
@@ -164,6 +164,45 @@ export async function check(send) {
   }
   const old = new Date(Date.now() - 4 * 86400e3).toISOString().slice(0, 10);
   for (const k of Object.keys(st.sent)) if (k.split("|").at(-1) < old) delete st.sent[k];
+  save();
+  return { sent: n };
+}
+
+// ---------- before the open and after the close ----------
+// A followed stock moving in extended hours (results usually come out then): a message at every
+// 3% step from yesterday's close (before the open) or today's close (after it), up or down, once
+// each, from Nasdaq's live quotes (the last extended-hours trade). session: "pre" or "post".
+export function extEvents(code, q, mem, { session, day, step = 3 } = {}) {
+  if (!(q?.price > 0) || !Number.isFinite(q.changePct)) return [];
+  const k = Math.trunc(q.changePct / step);
+  if (k === 0) return [];
+  const key = `${code}|ext|${session}|${k}|${day}`;
+  if (mem[key]) return [];
+  mem[key] = 1;
+  const up = k > 0;
+  const base = q.price / (1 + q.changePct / 100);
+  return [
+    `${session === "post" ? "🌙" : "🌅"}${up ? "🟢" : "🔴"}🇺🇸 ${code}: ${up ? "طالع" : "نازل"} ${q.changePct > 0 ? "+" : ""}${q.changePct.toFixed(1)}% ${session === "post" ? "بعد الإغلاق" : "قبل الافتتاح"}\n` +
+      `السعر ${px(q.price)} (${session === "post" ? "إغلاق اليوم" : "إغلاق أمس"} ${px(base)})\n` +
+      "سيولة التداول الممتد خفيفة، والحركة ممكن تتغير عند الافتتاح.",
+  ];
+}
+
+export async function extCheck(send, { session, day }) {
+  const codes = st.follow || [];
+  if (!codes.length) return { sent: 0 };
+  const quotes = await nasdaqLiveQuotes(codes, "stocks").catch(() => ({}));
+  let n = 0;
+  for (const c of codes) {
+    // the change from the last regular close (yesterday's before the open, today's after the close):
+    // Nasdaq's own change after the close is the regular session's, not the after-hours move
+    const last = (await getCandles(`US:${c}`, "1D", 3).catch(() => ({ candles: [] }))).candles?.at(-1)?.close;
+    const q = quotes[c]?.price > 0 && last > 0 ? { price: quotes[c].price, changePct: (quotes[c].price / last - 1) * 100 } : null;
+    for (const text of extEvents(c, q, st.sent, { session, day })) {
+      await send(text, c).catch(() => {});
+      n++;
+    }
+  }
   save();
   return { sent: n };
 }
