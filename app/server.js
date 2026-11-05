@@ -482,6 +482,7 @@ async function handle(req, res) {
     if (p === "/api/uswatch/ai-test" && req.method === "POST") return send(res, 200, await uswatch.aiTest());
     if (p === "/api/uswatch/preview") return send(res, 200, await uswatch.preview(q.code));
     if (p === "/api/uswatch/radar" && req.method === "POST") return send(res, 200, await uswatch.radar());
+    if (p === "/api/earnings/surprise") return send(res, 200, await data.nasdaqSurprise(String(q.code || "").toUpperCase()));
     if (p === "/api/uswatch/movers" && req.method === "POST") return send(res, 200, { text: await premovers.movers({ size: uswatch.settings().size }) });
     for (const [k, W] of [["ae", aewatch]]) {
       if (p === `/api/${k}watch`) {

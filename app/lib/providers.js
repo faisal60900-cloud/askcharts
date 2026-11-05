@@ -964,6 +964,18 @@ export async function nasdaqEarnings(date) {
   })).filter((r) => r.code);
 }
 
+// A company's last reported quarters against the analysts' forecast, from Nasdaq (newest first):
+// [{ date, eps, forecast, surprise (% above or below the forecast) }].
+export async function nasdaqSurprise(code) {
+  const j = await cached(`nq:surp:${code}`, 12 * 3600e3, () => getJson(`https://api.nasdaq.com/api/company/${encodeURIComponent(code)}/earnings-surprise`, NQ));
+  return (j?.data?.earningsSurpriseTable?.rows || []).map((r) => ({
+    date: r.dateReported || r.fiscalQtrEnd || "",
+    eps: num(r.eps),
+    forecast: num(r.consensusForecast),
+    surprise: r.percentageSurprise == null || r.percentageSurprise === "" ? null : num(r.percentageSurprise),
+  }));
+}
+
 export async function nasdaqLiveQuotes(tickers, defaultClass) {
   const etfs = defaultClass
     ? new Set()

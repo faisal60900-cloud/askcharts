@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { moversText, nyDates } from "../lib/premovers.js";
+import { moversText, nyDates, beatLine } from "../lib/premovers.js";
 
 const rows = [
   { ticker: "RUN", name: "Sunrun Inc. Common Stock" },
@@ -67,4 +67,15 @@ test("New York's business days around a date", () => {
   // Friday: the next business day is Monday; Monday: the previous is Friday
   assert.deepEqual(nyDates(Date.UTC(2026, 10, 6, 15)), { prev: "2026-11-05", today: "2026-11-06", next: "2026-11-09" });
   assert.deepEqual(nyDates(Date.UTC(2026, 10, 9, 15)).prev, "2026-11-06");
+});
+
+test("the last two quarters against the forecast: a star when both beat it", () => {
+  assert.equal(beatLine([{ surprise: 14.17 }, { surprise: 6.2 }, { surprise: -15 }]), "⭐ آخر ربعين: ✅ +14% · ✅ +6%");
+  assert.equal(beatLine([{ surprise: 14.17 }, { surprise: -16.13 }]), "آخر ربعين: ✅ +14% · ❌ -16%");
+  assert.equal(beatLine([{ surprise: null }, { surprise: 3 }]), "آخر ربعين: ✅ +3%");
+  assert.equal(beatLine([{ surprise: 0.2 }, { surprise: 61 }]), "آخر ربعين: ⚪ طابقت · ✅ +61%");
+  assert.equal(beatLine([]), "");
+  const t = moversText(rows, quotes, [], { earn: { tonight: [{ code: "ABNB", name: "Airbnb, Inc.", when: "post", cap: 100e9 }] }, surp: { ABNB: [{ surprise: 14.2 }, { surprise: 8 }] } });
+  assert.match(t, /• ABNB · Airbnb \(100 مليار\$\)\n   ⭐ آخر ربعين: ✅ \+14% · ✅ \+8%/);
+  assert.match(t, /⭐ = فاقت توقعات الربح آخر ربعين/);
 });

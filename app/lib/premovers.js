@@ -7,7 +7,7 @@
 // calendar. Sent once a day before the opening auction, and on demand ("قبل الافتتاح").
 // Pre-market volume is thin and big gaps often fade after the open, so this says where to look at
 // the open, not what to buy.
-import { nasdaqScreener, nasdaqLiveQuotes, nasdaqEarnings } from "./providers.js";
+import { nasdaqScreener, nasdaqLiveQuotes, nasdaqEarnings, nasdaqSurprise } from "./providers.js";
 import { news as newsOf } from "./market-info.js";
 import * as trades from "./trades.js";
 import * as usflow from "./usflow.js";
@@ -39,7 +39,15 @@ export function nyDates(ms = Date.now()) {
 // mine: your own codes (followed and open positions), always listed when they have a quote.
 // earn: { out: Set of codes whose results came out since yesterday's close, tonight: [...],
 // tomorrow: [...] } (calendar rows); heads: { TICKER: latest headline } for the big movers.
-export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, down = 5, earn = {}, heads = {}, minCap = 2e9 } = {}) {
+// The last two reported quarters against the forecast, newest first: ⭐ when both beat it.
+export function beatLine(rows) {
+  const two = (rows || []).filter((r) => Number.isFinite(r.surprise)).slice(0, 2);
+  if (!two.length) return "";
+  const one = (r) => (Math.round(r.surprise) === 0 ? "⚪ طابقت" : `${r.surprise > 0 ? "✅ +" : "❌ "}${Math.round(r.surprise)}%`);
+  return `${two.length === 2 && two.every((r) => Math.round(r.surprise) > 0) ? "⭐ " : ""}آخر ربعين: ${two.map(one).join(" · ")}`;
+}
+
+export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, down = 5, earn = {}, heads = {}, minCap = 2e9, surp = {} } = {}) {
   const out = earn.out || new Set();
   const list = rows.map((r) => ({ ...r, q: quotes[r.ticker] })).filter((r) => r.q?.price > 0 && Number.isFinite(r.q.changePct));
   const ups = list.filter((r) => r.q.changePct >= min).sort((a, b) => b.q.changePct - a.q.changePct).slice(0, up);
@@ -52,7 +60,7 @@ export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, 
   const cal = (rowsOf) => {
     const mineSet = new Set(mine);
     const pick = (rowsOf || []).filter((r) => r.cap >= minCap || mineSet.has(r.code)).sort((a, b) => mineSet.has(b.code) - mineSet.has(a.code) || b.cap - a.cap).slice(0, 10);
-    return pick.map((r) => `• ${r.code}${mineSet.has(r.code) ? " 💼" : ""} · ${short(r.name)}${r.cap ? ` (${bn(r.cap)})` : ""}`).join("\n");
+    return pick.map((r) => `• ${r.code}${mineSet.has(r.code) ? " 💼" : ""} · ${short(r.name)}${r.cap ? ` (${bn(r.cap)})` : ""}${beatLine(surp[r.code]) ? `\n   ${beatLine(surp[r.code])}` : ""}`).join("\n");
   };
   const tonight = cal(earn.tonight);
   const tomorrow = cal(earn.tomorrow);
@@ -64,6 +72,7 @@ export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, 
     own.length ? `💼 أسهمك:\n${own.join("\n")}` : "",
     tonight ? `📅 نتائج الليلة بعد الإغلاق (ممكن تقفز أو تطيح بقوة بكرة):\n${tonight}` : "",
     tomorrow ? `📅 نتائج بكرة قبل الافتتاح:\n${tomorrow}` : "",
+    tonight || tomorrow ? "⭐ = فاقت توقعات الربح آخر ربعين. ✅ فوق التوقعات · ❌ تحت · ⚪ طابقت. هذا تاريخ الشركة، مو ضمان: أوبر مثلًا فاقت التوقعات أغلب المرات ونزل سهمها يوم النتائج 7 مرات من 8." : "",
     "⚠️ سيولة ما قبل الافتتاح خفيفة، والقفزات الكبيرة كثير ترجع بعد الافتتاح. انتظر أول 15–30 دقيقة قبل أي قرار. وموعد النتائج ما يقول الاتجاه: ممكن طلوع وممكن نزول. للمعلومة، مو توصية.",
   ]
     .filter(Boolean)
@@ -100,5 +109,10 @@ export async function movers({ size = 1000, ms = Date.now() } = {}) {
     const it = (await newsOf(`US:${r.ticker}`).catch(() => ({ items: [] }))).items.find((h) => !h.time || h.time >= ms - 48 * 3600e3);
     if (it?.title) heads[r.ticker] = it.title;
   }
-  return moversText(rows, quotes, mine, { at: kwNow(ms), earn, heads });
+  // the last two quarters of the big companies reporting tonight and tomorrow (one at a time)
+  const mineSet = new Set(mine);
+  const soon = [...earn.tonight, ...earn.tomorrow].filter((r) => r.cap >= 2e9 || mineSet.has(r.code)).sort((a, b) => mineSet.has(b.code) - mineSet.has(a.code) || b.cap - a.cap).slice(0, 20);
+  const surp = {};
+  for (const r of soon) surp[r.code] = await nasdaqSurprise(r.code).catch(() => []);
+  return moversText(rows, quotes, mine, { at: kwNow(ms), earn, heads, surp });
 }
