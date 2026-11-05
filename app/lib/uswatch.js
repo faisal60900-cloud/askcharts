@@ -17,7 +17,7 @@ import { flowFor } from "./flow.js";
 import * as prealert from "./prealert.js";
 import * as watchlist from "./watchlist.js";
 import * as usflow from "./usflow.js";
-import { movers } from "./premovers.js";
+import { movers, checkTargets } from "./premovers.js";
 import { about, aboutLine } from "./about.js";
 
 // light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
@@ -452,6 +452,8 @@ async function tick() {
     if (mk.open && Date.now() - (state.lastFlowAt || 0) >= 3 * 60e3) {
       state.lastFlowAt = Date.now();
       usflow.check((text, code) => send(text, { symbol: `US:${code}`, name: "" })).catch(() => {});
+      // the ⭐ companies after their results: +5%, +10%, +15% (lib/premovers.js)
+      checkTargets((text) => send(text, { name: "" })).catch(() => {});
     }
     if (mk.open && Date.now() - state.lastScanAt >= (d.fast ? 5 : cfg.every) * 60e3) await runOnce();
     // between full scans, every minute: the stocks closest to a breakout, so a break is caught fast

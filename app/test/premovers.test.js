@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { moversText, nyDates, beatLine } from "../lib/premovers.js";
+import { moversText, nyDates, beatLine, watchAdd, targetEvents } from "../lib/premovers.js";
 
 const rows = [
   { ticker: "RUN", name: "Sunrun Inc. Common Stock" },
@@ -78,4 +78,35 @@ test("the last two quarters against the forecast: a star when both beat it", () 
   const t = moversText(rows, quotes, [], { earn: { tonight: [{ code: "ABNB", name: "Airbnb, Inc.", when: "post", cap: 100e9 }] }, surp: { ABNB: [{ surprise: 14.2 }, { surprise: 8 }] } });
   assert.match(t, /• ABNB · Airbnb \(100 مليار\$\)\n   ⭐ آخر ربعين: ✅ \+14% · ✅ \+8%/);
   assert.match(t, /⭐ = فاقت توقعات الربح آخر ربعين/);
+});
+
+test("the calendar shows each company's price, and the ⭐ ones followed after their results", () => {
+  const t = moversText(rows, { ...quotes, VST: { price: 165.2, changePct: 1.24 } }, [], {
+    earn: { tomorrow: [{ code: "VST", name: "Vistra Corp.", when: "pre", cap: 47e9 }] },
+    surp: { VST: [{ surprise: 17 }, { surprise: 30 }] },
+    follow: ["VST"],
+  });
+  assert.match(t, /• VST · Vistra \(47 مليار\$\) · 165\.2\$ \(\+1\.2%\)\n   ⭐ آخر ربعين/);
+  assert.match(t, /🎯 بتابع لك ⭐ بعد نتائجها، وأنبهك لو طلعت \+5% و\+10% و\+15% من إغلاق ما قبل النتائج: VST/);
+});
+
+test("after the results: a message at +5%, +10% and +15% from the close before them, each once", () => {
+  const watch = watchAdd([{ code: "VST", name: "Vistra" }], "2026-11-06", {});
+  assert.deepEqual(watch.VST, { name: "Vistra", from: "2026-11-06", until: "2026-11-10", base: null, hit: 0 });
+  // not yet: the results come out tomorrow
+  assert.equal(targetEvents(watch, { VST: { price: 200, changePct: 20 } }, "2026-11-05").length, 0);
+  // the reaction day: the base is yesterday's close (110 over +10% = 100)
+  let ev = targetEvents(watch, { VST: { price: 110, changePct: 10 } }, "2026-11-06");
+  assert.equal(watch.VST.base, 100);
+  assert.equal(ev.length, 1);
+  assert.match(ev[0], /🎯🟢🇺🇸 VST \(Vistra\): حقق الهدف 2 بعد النتائج \(\+10%\)/);
+  assert.match(ev[0], /السعر 110\$ · إغلاق قبل النتائج 100\$ · من النتائج \+10\.0%\nالهدف الجاي: 115\$ \(\+15%\)/);
+  // the same level again: nothing; the last target: once
+  assert.equal(targetEvents(watch, { VST: { price: 111, changePct: 1 } }, "2026-11-09").length, 0);
+  ev = targetEvents(watch, { VST: { price: 116, changePct: 5 } }, "2026-11-09");
+  assert.match(ev[0], /حقق كل الأهداف 🎉 بعد النتائج \(\+15%\)/);
+  assert.doesNotMatch(ev[0], /الهدف الجاي/);
+  // after three business days it's dropped
+  targetEvents(watch, {}, "2026-11-11");
+  assert.equal(watch.VST, undefined);
 });

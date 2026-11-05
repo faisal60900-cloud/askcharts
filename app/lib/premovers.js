@@ -11,6 +11,7 @@ import { nasdaqScreener, nasdaqLiveQuotes, nasdaqEarnings, nasdaqSurprise } from
 import { news as newsOf } from "./market-info.js";
 import * as trades from "./trades.js";
 import * as usflow from "./usflow.js";
+import * as store from "./store.js";
 
 const n2 = (v) => Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const pct = (v) => `${v > 0 ? "+" : ""}${Number(v).toFixed(1)}%`;
@@ -47,7 +48,10 @@ export function beatLine(rows) {
   return `${two.length === 2 && two.every((r) => Math.round(r.surprise) > 0) ? "⭐ " : ""}آخر ربعين: ${two.map(one).join(" · ")}`;
 }
 
-export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, down = 5, earn = {}, heads = {}, minCap = 2e9, surp = {} } = {}) {
+export const isStar = (rows) => beatLine(rows).startsWith("⭐");
+export const TARGETS = [5, 10, 15];
+
+export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, down = 5, earn = {}, heads = {}, minCap = 2e9, surp = {}, follow = [] } = {}) {
   const out = earn.out || new Set();
   const list = rows.map((r) => ({ ...r, q: quotes[r.ticker] })).filter((r) => r.q?.price > 0 && Number.isFinite(r.q.changePct));
   const ups = list.filter((r) => r.q.changePct >= min).sort((a, b) => b.q.changePct - a.q.changePct).slice(0, up);
@@ -60,7 +64,8 @@ export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, 
   const cal = (rowsOf) => {
     const mineSet = new Set(mine);
     const pick = (rowsOf || []).filter((r) => r.cap >= minCap || mineSet.has(r.code)).sort((a, b) => mineSet.has(b.code) - mineSet.has(a.code) || b.cap - a.cap).slice(0, 10);
-    return pick.map((r) => `• ${r.code}${mineSet.has(r.code) ? " 💼" : ""} · ${short(r.name)}${r.cap ? ` (${bn(r.cap)})` : ""}${beatLine(surp[r.code]) ? `\n   ${beatLine(surp[r.code])}` : ""}`).join("\n");
+    const px = (c) => (quotes[c]?.price > 0 ? ` · ${n2(quotes[c].price)}$${Number.isFinite(quotes[c].changePct) ? ` (${pct(quotes[c].changePct)})` : ""}` : "");
+    return pick.map((r) => `• ${r.code}${mineSet.has(r.code) ? " 💼" : ""} · ${short(r.name)}${r.cap ? ` (${bn(r.cap)})` : ""}${px(r.code)}${beatLine(surp[r.code]) ? `\n   ${beatLine(surp[r.code])}` : ""}`).join("\n");
   };
   const tonight = cal(earn.tonight);
   const tomorrow = cal(earn.tomorrow);
@@ -72,6 +77,7 @@ export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, 
     own.length ? `💼 أسهمك:\n${own.join("\n")}` : "",
     tonight ? `📅 نتائج الليلة بعد الإغلاق (ممكن تقفز أو تطيح بقوة بكرة):\n${tonight}` : "",
     tomorrow ? `📅 نتائج بكرة قبل الافتتاح:\n${tomorrow}` : "",
+    follow.length ? `🎯 بتابع لك ⭐ بعد نتائجها، وأنبهك لو طلعت ${TARGETS.map((t) => `+${t}%`).join(" و")} من إغلاق ما قبل النتائج: ${follow.join("، ")}` : "",
     tonight || tomorrow ? "⭐ = فاقت توقعات الربح آخر ربعين. ✅ فوق التوقعات · ❌ تحت · ⚪ طابقت. هذا تاريخ الشركة، مو ضمان: أوبر مثلًا فاقت التوقعات أغلب المرات ونزل سهمها يوم النتائج 7 مرات من 8." : "",
     "⚠️ سيولة ما قبل الافتتاح خفيفة، والقفزات الكبيرة كثير ترجع بعد الافتتاح. انتظر أول 15–30 دقيقة قبل أي قرار. وموعد النتائج ما يقول الاتجاه: ممكن طلوع وممكن نزول. للمعلومة، مو توصية.",
   ]
@@ -111,8 +117,73 @@ export async function movers({ size = 1000, ms = Date.now() } = {}) {
   }
   // the last two quarters of the big companies reporting tonight and tomorrow (one at a time)
   const mineSet = new Set(mine);
-  const soon = [...earn.tonight, ...earn.tomorrow].filter((r) => r.cap >= 2e9 || mineSet.has(r.code)).sort((a, b) => mineSet.has(b.code) - mineSet.has(a.code) || b.cap - a.cap).slice(0, 20);
+  // the same ten a list as the message shows
+  const top = (list) => list.filter((r) => r.cap >= 2e9 || mineSet.has(r.code)).sort((a, b) => mineSet.has(b.code) - mineSet.has(a.code) || b.cap - a.cap).slice(0, 10);
+  const soon = [...top(earn.tonight), ...top(earn.tomorrow)];
   const surp = {};
   for (const r of soon) surp[r.code] = await nasdaqSurprise(r.code).catch(() => []);
-  return moversText(rows, quotes, mine, { at: kwNow(ms), earn, heads, surp });
+  // their prices too (a company in the calendar may be outside the scanned list)
+  const missing = soon.map((r) => r.code).filter((c) => !quotes[c]);
+  if (missing.length) Object.assign(quotes, await nasdaqLiveQuotes(missing, "stocks").catch(() => ({})));
+  // the ⭐ ones (beat the forecast both last quarters) are followed after their results
+  const follow = soon.filter((r) => isStar(surp[r.code])).map((r) => r.code);
+  watchAdd(follow.map((c) => ({ code: c, name: short(soon.find((r) => r.code === c)?.name) })), d.next);
+  return moversText(rows, quotes, mine, { at: kwNow(ms), earn, heads, surp, follow });
+}
+
+// ---------- after the results: the ⭐ companies' targets ----------
+// Watched from the day their results move the stock (the next business day) for three business
+// days. The base is the last close before the results (that day's price over its change); a
+// message the first time the price is 5%, 10% and 15% above it.
+let wst = store.read("premovers", { watch: {} });
+const wsave = () => store.write("premovers", wst);
+const after = (date, n) => {
+  let d = date;
+  for (let i = 0; i < n; i++) d = nyDates(Date.parse(`${d}T16:00:00Z`)).next;
+  return d;
+};
+export function watchAdd(list, from, watch = wst.watch) {
+  for (const { code, name } of list) if (!watch[code] || watch[code].until < from) watch[code] = { name: name || "", from, until: after(from, 2), base: null, hit: 0 };
+  if (watch === wst.watch) wsave();
+  return watch;
+}
+export const watching = () => wst.watch;
+
+// The messages due now; watch is changed in place (bases set, targets marked, old ones dropped).
+export function targetEvents(watch, quotes, today) {
+  const ev = [];
+  for (const [code, w] of Object.entries(watch)) {
+    if (today > w.until) {
+      delete watch[code];
+      continue;
+    }
+    const q = quotes[code];
+    if (today < w.from || !(q?.price > 0)) continue;
+    if (!w.base && Number.isFinite(q.changePct)) w.base = +(q.price / (1 + q.changePct / 100)).toFixed(4);
+    if (!w.base) continue;
+    const up = (q.price / w.base - 1) * 100;
+    let reached = 0;
+    TARGETS.forEach((t, i) => up >= t && (reached = i + 1));
+    if (reached > w.hit) {
+      w.hit = reached;
+      const next = TARGETS[reached];
+      ev.push(
+        `🎯🟢🇺🇸 ${code}${w.name ? ` (${w.name})` : ""}: ${reached === TARGETS.length ? "حقق كل الأهداف 🎉" : `حقق الهدف ${reached}`} بعد النتائج (+${TARGETS[reached - 1]}%)\n` +
+          `السعر ${n2(q.price)}$ · إغلاق قبل النتائج ${n2(w.base)}$ · من النتائج ${pct(up)}` +
+          (next ? `\nالهدف الجاي: ${n2(w.base * (1 + next / 100))}$ (+${next}%)` : "") +
+          "\n⭐ فاقت التوقعات آخر ربعين. للمعلومة، مو توصية.",
+      );
+    }
+  }
+  return ev;
+}
+
+export async function checkTargets(send, ms = Date.now()) {
+  const today = nyDates(ms).today;
+  const codes = Object.entries(wst.watch).filter(([, w]) => today >= w.from).map(([c]) => c);
+  const quotes = codes.length ? await nasdaqLiveQuotes(codes, "stocks").catch(() => ({})) : {};
+  const ev = targetEvents(wst.watch, quotes, today);
+  wsave();
+  for (const text of ev) await send(text).catch(() => {});
+  return { sent: ev.length, watching: Object.keys(wst.watch).length };
 }
