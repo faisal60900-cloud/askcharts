@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 process.env.QT_DATA_DIR ||= mkdtempSync(path.join(os.tmpdir(), "agents-"));
-const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText, followText } = await import("../lib/agents.js");
+const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText, followText, levelsOf, roleAr, activities, sectorAr, freshLevels } = await import("../lib/agents.js");
 
 test("the risk manager: profit in dollars and dinars, the stop's result, and where to raise it", () => {
   const t = riskText([{ market: "us", code: "UBER", name: "UBER", mine: true, entry: 65.83, stop: 59.5, targets: [72, 75, 80, 88, 100], qty: 493, last: 69.46 }]);
@@ -45,7 +45,12 @@ test("the insider purchases: parsed from OpenInsider, the biggest first, small o
   assert.equal(rows.length, 3);
   assert.deepEqual(rows[0], { filed: "2026-11-04", date: "2026-11-02", code: "INTC", company: "Intel Corp", who: "Tan Lip-Bu", title: "CEO", type: "P - Purchase", price: 64.73, qty: 150000, own: "+11%", value: 9709680 });
   const t = insidersText(rows, { since: "2026-10-29", mine: ["UBER"] });
-  assert.match(t, /• SIRI · Sirius XM Holdings\n   Berkshire Hathaway Inc \(10%\): 743,965 سهم على 28\.89\$ = 21\.5 مليون\$ · 2026-10-30/);
+  assert.match(t, /• SIRI\n   👔 بيركشاير هاثاواي \(وارن بافيت\) اشترى 743,965 سهم على 28\.89\$ = 21\.5 مليون\$ \(2026-10-30\)/);
+  assert.match(t, /• INTC\n   👔 الرئيس التنفيذي اشترى 150,000 سهم/);
+  assert.doesNotMatch(t, /Sirius|Intel Corp|Tan Lip-Bu/);
+  // with its business and levels, in Arabic
+  const t2 = insidersText(rows, { since: "2026-10-29", acts: { SIRI: "راديو بالأقمار الصناعية" }, lv: { SIRI: { price: 29.4, lo: 28.5, hi: 29, stop: 27.6, targets: [30.2, 31, 31.8] } } });
+  assert.match(t2, /• SIRI · راديو بالأقمار الصناعية\n   💵 السعر: 29\.4\$\n   🟢 منطقة الشراء: 28\.5\$ – 29\$\n   🎯 الأهداف: 30\.2\$ · 31\$ · 31\.8\$\n   🛑 وقف الخسارة: 27\.6\$\n   👔 بيركشاير/);
   assert.ok(t.indexOf("SIRI") < t.indexOf("INTC"));
   assert.doesNotMatch(t, /TINY|SELL/);
   // the same trade by two related funds, once
@@ -133,7 +138,7 @@ test("the momentum analyst: yesterday's breakout on volume, near the high, over 
   assert.equal(r.entry, 72.14);
   assert.equal(r.stop, 69.65);
   assert.deepEqual(r.targets, [74.63, 77.12, 79.61]);
-  assert.match(momentumText([r]), /1️⃣ ABC: 71\.8\$ \(\+[\d.]+%\) · سيولة [\d.]+x · شراء 90% · RSI \d+\n   🟢 الدخول فوق: 72\.14\$ · 🛑 الوقف: 69\.65\$/);
+  assert.match(momentumText([r], { ABC: "صناعة رقائق" }), /• ABC · صناعة رقائق\n   💵 السعر: 71\.8\$ \(\+[\d.]+%\)\n   🟢 الدخول فوق: 72\.14\$\n   🎯 الأهداف: 74\.63\$ · 77\.12\$ · 79\.61\$\n   🛑 وقف الخسارة: 69\.65\$\n   📊 سيولة [\d.]+ ضعف · شراء 90% · RSI \d+/);
   // no breakout on ordinary volume
   b.at(-1).volume = 1e6;
   assert.equal(momentumRow("ABC", b), null);
@@ -158,4 +163,36 @@ test("the follow-up after the open: where each of today's picks stands", () => {
   assert.ok(t.indexOf("سعود") < t.indexOf("سالم"));
   assert.equal(followText(picks, {}, "close"), "");
   assert.match(followText(picks, { AAA: { price: 50.6 } }, "close"), /^🔔 بعد الإغلاق/);
+});
+
+test("Arabic for every stock: the levels from the scan, the insider's role, the business by the AI once", async () => {
+  const text = "📊🇺🇸 قراءة RDNT\nالسعر الآن: 78.01$ (-2.8% اليوم)\n🎯 الشراء من منطقة: 74.33$ – 76$\n🛑 وقف الخسارة الأولي: 72.39$ (-3.7% من الدخول)\n1️⃣ 77.94$ (+3.7%) — 53%\n2️⃣ 80.72$ (+7.39%) — 37%\n3️⃣ 83.5$ (+11.09%) — 27%\n4️⃣ 86$ (+14%) — 20%";
+  assert.deepEqual(levelsOf(text), { lo: 74.33, hi: 76, stop: 72.39, targets: [77.94, 80.72, 83.5] });
+  assert.equal(roleAr("CEO"), "الرئيس التنفيذي");
+  assert.equal(roleAr("Dir, 10%"), "عضو مجلس إدارة");
+  assert.equal(roleAr("10%", "Berkshire Hathaway Inc"), "بيركشاير هاثاواي (وارن بافيت)");
+  assert.equal(sectorAr("Technology"), "تقنية");
+  let calls = 0;
+  const fake = async () => (calls++, '{"ZZZQ": "صناعة رقائق الذكاء الاصطناعي", "ZZZR": "made chips"}');
+  const a = await activities(["ZZZQ", "ZZZR"], { writeImpl: fake });
+  assert.equal(a.ZZZQ, "صناعة رقائق الذكاء الاصطناعي");
+  assert.equal(a.ZZZR, ""); // English refused, no sector known offline
+  await activities(["ZZZQ"], { writeImpl: fake });
+  assert.equal(calls, 1); // kept, not asked again
+});
+
+test("levels the price has left are replaced by ones around today's price", () => {
+  const L = { lo: 56.48, hi: 62.54, stop: 39.31, targets: [79.71, 99.91, 120.11] };
+  const bars = Array.from({ length: 16 }, (_, i) => ({ high: 255 + (i % 2), low: 245, close: 250 }));
+  const f = freshLevels(L, 253.56, bars);
+  assert.equal(f.fresh, true);
+  assert.equal(f.lo, null);
+  assert.ok(f.stop < 253.56 && f.stop > 220);
+  assert.ok(f.targets[0] > 253.56 && f.targets[0] < f.targets[1]);
+  // still inside the setup: kept
+  const k = freshLevels({ lo: 74.33, hi: 76, stop: 72.39, targets: [77.94, 80.72, 83.5] }, 76.5, bars);
+  assert.equal(k.fresh, false);
+  assert.equal(k.lo, 74.33);
+  // past the first target: replaced
+  assert.equal(freshLevels({ lo: 108.78, hi: 112.89, stop: 102.6, targets: [119.07, 127.31, 135.54] }, 119.44, bars).fresh, true);
 });

@@ -108,7 +108,7 @@ export function parseOpenInsider(html) {
     .filter((r) => r.code && /^P/.test(r.type));
 }
 
-export function insidersText(rows, { since = "", mine = [], top = 10, min = 250e3 } = {}) {
+export function insidersText(rows, { since = "", mine = [], top = 10, min = 250e3, acts = {}, lv = {} } = {}) {
   const mineSet = new Set(mine);
   // one trade reported by several related funds is listed once
   const seen = new Set();
@@ -117,9 +117,16 @@ export function insidersText(rows, { since = "", mine = [], top = 10, min = 250e
   const yours = rows.filter((r) => mineSet.has(r.code));
   return [
     head("insiders"),
-    big.length ? `🟢 أكبر شراء من المدراء (من فلوسهم، آخر أسبوع):\n${big.map((r) => `• ${r.code}${mineSet.has(r.code) ? " 💼" : ""} · ${r.company.slice(0, 28)}\n   ${r.who.slice(0, 26)}${r.title ? ` (${r.title.slice(0, 20)})` : ""}: ${n2(r.qty, 0)} سهم على ${n2(r.price)}$ = ${money(r.value)} · ${r.date}${/^\+\d/.test(r.own) ? ` · زادت حصته ${r.own}` : /new/i.test(r.own) ? " · مركز جديد" : ""}`).join("\n")}` : "ما في شراء كبير من المدراء آخر أسبوع.",
+    big.length
+      ? `🟢 أكبر شراء من داخل الشركات (من فلوسهم، آخر أسبوع):\n\n${big
+          .map((r) => {
+            const L = lv[r.code] || {};
+            return stockBlock(r.code, { act: acts[r.code], mine: mineSet.has(r.code), lo: L.lo, hi: L.hi, stop: L.stop, targets: L.targets, price: L.price, fresh: L.fresh, note: `👔 ${roleAr(r.title, r.who)} اشترى ${n2(r.qty, 0)} سهم على ${n2(r.price)}$ = ${money(r.value)} (${r.date})${/^\+\d/.test(r.own) ? ` · زادت حصته ${r.own}` : /new/i.test(r.own) ? " · مركز جديد" : ""}` });
+          })
+          .join("\n\n")}`
+      : "ما في شراء كبير من داخل الشركات آخر أسبوع.",
     mine.length && !yours.length ? `💼 أسهمك (${mine.join("، ")}): ما في مدير اشترى فيها آخر أسبوع.` : "",
-    "المصدر: إفصاحات Form 4 لهيئة الأوراق المالية الأمريكية. شراء المدير إشارة ثقة، مو توقيت: مدير إنتل اشترى على 95$ والسهم نزل −39% بعدها.",
+    "المصدر: إفصاحات هيئة الأوراق المالية الأمريكية (Form 4). الأهداف والوقف من مسح السوق. شراء المدير إشارة ثقة، مو توقيت: مدير إنتل اشترى على 95$ والسهم نزل −39% بعدها.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -130,11 +137,97 @@ async function insiders(ms = Date.now()) {
   if (!res.ok) throw new Error(`OpenInsider ${res.status}`);
   const rows = parseOpenInsider(await res.text());
   const since = new Date(ms - 7 * 86400e3).toISOString().slice(0, 10);
-  const text = insidersText(rows, { since, mine: myCodes("us") });
+  // the ten listed: their business and levels
+  const seen0 = new Set();
+  const listed = rows.filter((r) => r.value >= 250e3 && r.date >= since && !seen0.has(r.code) && seen0.add(r.code)).sort((a, b) => b.value - a.value).slice(0, 10).map((r) => r.code);
+  const acts = await activities(listed);
+  const lv = {};
+  for (const c of listed) lv[c] = await levels(c).catch(() => ({}));
+  const text = insidersText(rows, { since, mine: myCodes("us"), acts, lv });
   // the five biggest, for the HR review: how the stocks the insiders bought did afterwards
   const seen = new Set();
   rows.filter((r) => r.value >= 250e3 && r.date >= since && !seen.has(r.code) && seen.add(r.code)).sort((a, b) => b.value - a.value).slice(0, 5).forEach((r) => pick("insiders", r.code, { price: r.price }));
   return text;
+}
+
+// ---------- Arabic for every stock: its business, price, targets and stop ----------
+// Only the symbol stays in English. The business is written once by the AI and kept (st.ar), with
+// the sector in Arabic as the fallback.
+const SECTOR_AR = { Technology: "تقنية", "Health Care": "رعاية صحية", Finance: "خدمات مالية", Energy: "طاقة", "Consumer Discretionary": "سلع وخدمات استهلاكية", "Consumer Staples": "سلع استهلاكية أساسية", Industrials: "صناعة", "Real Estate": "عقار", Utilities: "مرافق وكهرباء", "Basic Materials": "مواد أساسية", Telecommunications: "اتصالات", Miscellaneous: "متنوعة" };
+export function sectorAr(sector) {
+  return SECTOR_AR[sector] || "";
+}
+export async function activities(codes, { writeImpl = write } = {}) {
+  st.ar ||= {};
+  const need = codes.filter((c) => !st.ar[c]);
+  if (need.length) {
+    const rows = await nasdaqScreener("stocks").catch(() => []);
+    const meta = Object.fromEntries(rows.map((r) => [r.ticker, r]));
+    const list = need.map((c) => `${c}: ${meta[c]?.name || ""} (${meta[c]?.industry || meta[c]?.sector || ""})`).join("\n");
+    const text = await writeImpl("أنت تكتب بالعربي البسيط لمتداول كويتي.", `لكل شركة أمريكية تحت، اكتب نشاطها بالعربي في 3 إلى 6 كلمات (مثل: «صناعة رقائق الذكاء الاصطناعي» أو «تطبيق توصيل ومشاوير»). رجّع JSON بس، بدون شرح: {"الرمز": "النشاط"}\n\n${list}`, { maxTokens: 6000 }).catch(() => null);
+    let got = {};
+    try {
+      got = JSON.parse(String(text || "").match(/\{[\s\S]*\}/)?.[0] || "{}");
+    } catch {}
+    for (const c of need) {
+      const a = String(got[c] || "").trim();
+      if (a && /[؀-ۿ]/.test(a)) st.ar[c] = a.slice(0, 50);
+      else if (sectorAr(meta[c]?.sector)) st.ar[c] = `قطاع ${sectorAr(meta[c].sector)}`;
+    }
+    save();
+  }
+  return Object.fromEntries(codes.map((c) => [c, st.ar[c] || ""]));
+}
+
+// The zone, stop and first three targets the US market scan gives a stock (uswatch.preview).
+export function levelsOf(text) {
+  const num = (v) => Number(String(v).replace(/,/g, ""));
+  const zone = String(text || "").match(/منطقة: ([\d.,]+)\$ – ([\d.,]+)\$/);
+  const stop = String(text || "").match(/وقف الخسارة الأولي: ([\d.,]+)\$/);
+  const targets = [...String(text || "").matchAll(/[1-5]️⃣ ([\d.,]+)\$/g)].map((m) => num(m[1])).slice(0, 3);
+  return { lo: zone ? num(zone[1]) : null, hi: zone ? num(zone[2]) : null, stop: stop ? num(stop[1]) : null, targets };
+}
+// The scan's levels belong to the stock's last setup; when the price has left them (well over the
+// zone, under the stop, or past the first target) they're replaced by ones around today's price:
+// the stop two average daily ranges (ATR 14) under it, the targets 2, 4 and 6 ATR over it.
+export function freshLevels(L, price, bars = []) {
+  const ok = L.lo && L.hi && L.stop && L.targets?.length && price >= L.stop && price <= L.hi * 1.05 && price < L.targets[0];
+  if (ok || !(price > 0)) return { ...L, fresh: false };
+  const b = bars.slice(-15);
+  let atr = 0;
+  for (let i = 1; i < b.length; i++) atr += Math.max(b[i].high - b[i].low, Math.abs(b[i].high - b[i - 1].close), Math.abs(b[i].low - b[i - 1].close));
+  atr = b.length > 1 ? atr / (b.length - 1) : price * 0.03;
+  const r2 = (v) => +v.toFixed(2);
+  return { lo: null, hi: null, entry: null, stop: r2(price - 2 * atr), targets: [2, 4, 6].map((k) => r2(price + k * atr)), fresh: true };
+}
+async function levels(code, price) {
+  const us = await import("./uswatch.js");
+  const p = await us.preview(code).catch(() => null);
+  const L = p?.text ? levelsOf(p.text) : { targets: [] };
+  const px = price || Number((p?.text?.match(/السعر الآن: ([\d.,]+)\$/) || [])[1]?.replace(/,/g, "")) || null;
+  const bars = (await getCandles(`US:${code}`, "1D", 30).catch(() => ({ candles: [] }))).candles || [];
+  return { ...freshLevels(L, px, bars), price: px };
+}
+
+// One stock, in Arabic: the symbol, its business, the price, the entry, the targets and the stop.
+export function stockBlock(code, { act = "", price, chg, entry, lo, hi, stop, targets = [], note = "", mine = false, fresh = false } = {}) {
+  return [
+    `• ${code}${mine ? " 💼" : ""}${act ? ` · ${act}` : ""}`,
+    price > 0 ? `   💵 السعر: ${n2(price)}$${Number.isFinite(chg) ? ` (${pct(chg)})` : ""}` : "",
+    entry ? `   🟢 الدخول فوق: ${n2(entry)}$` : lo && hi ? `   🟢 منطقة الشراء: ${n2(lo)}$ – ${n2(hi)}$` : "",
+    targets.length ? `   🎯 الأهداف${fresh ? " (من السعر الحالي)" : ""}: ${targets.map((t) => `${n2(t)}$`).join(" · ")}` : "",
+    stop ? `   🛑 وقف الخسارة: ${n2(stop)}$` : "",
+    note ? `   ${note}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+const ROLE_AR = [[/chief executive|\bceo\b/i, "الرئيس التنفيذي"], [/\bcfo\b|chief financial/i, "المدير المالي"], [/\bcoo\b/i, "مدير العمليات"], [/chair|cob\b/i, "رئيس مجلس الإدارة"], [/\bpres/i, "الرئيس"], [/\bdir/i, "عضو مجلس إدارة"], [/10%/, "مساهم كبير (10%+)"], [/\bgc\b|general counsel/i, "المستشار القانوني"], [/\bevp|\bsvp|\bvp\b/i, "نائب رئيس"]];
+export function roleAr(title, who = "") {
+  if (/berkshire/i.test(who)) return "بيركشاير هاثاواي (وارن بافيت)";
+  const r = ROLE_AR.find(([re]) => re.test(title || ""));
+  return r ? r[1] : "من داخل الشركة";
 }
 
 // ---------- 📈 المحلل الفني ----------
@@ -150,10 +243,18 @@ async function tech() {
       const zone = p.text.match(/منطقة: ([\d.,]+)\$ – ([\d.,]+)\$/);
       pick("tech", n.code, { price: num(/السعر الآن: ([\d.,]+)\$/), stop: num(/وقف الخسارة الأولي: ([\d.,]+)\$/), t1: num(/1️⃣ ([\d.,]+)\$/), lo: zone ? Number(zone[1].replace(/,/g, "")) : null, hi: zone ? Number(zone[2].replace(/,/g, "")) : null });
     }
-    if (p?.text) reads.push({ code: n.code, why: n.why, text: p.text.split("\n").filter((l) => /السعر الآن|منطقة|وقف الخسارة|1️⃣|2️⃣|3️⃣|مقاومات/.test(l)).join("\n"), record: p.text.split("\n").find((l) => /السجل التاريخي/.test(l)) });
+    if (p?.text) reads.push({ code: n.code, why: n.why, full: p.text, text: p.text.split("\n").filter((l) => /السعر الآن|منطقة|وقف الخسارة|1️⃣|2️⃣|3️⃣|مقاومات/.test(l)).join("\n"), record: p.text.split("\n").find((l) => /السجل التاريخي/.test(l)) });
   }
-  const view = await write(ANALYST, `هذي أسهم أمريكية قريبة من إشارة دخول، مع الناقص لكل واحد وأرقامها:\n\n${reads.map((r) => `${r.code} (ناقصه: ${r.why})\n${r.text}`).join("\n\n")}\n\nرتّب الـ ${reads.length} أسهم كلها من الأقوى للأضعف، سطر واحد لكل سهم (${reads.length} أسطر، ولا تترك ولا سهم): ليش، والشي اللي يأكد الدخول (السعر أو السيولة). بالعربي البسيط، بدون مقدمات، ولا تضمن ربح.`, { maxTokens: 8000 }).catch(() => null);
-  return [head("tech"), "أقرب الأسهم لإشارة دخول كاملة (الأرقام من مسح السوق):", ...reads.map((r) => `🔸 ${r.code} · ناقصها: ${r.why}\n${r.text}`), view ? `🧠 رأي المحلل:\n${view}` : "", reads.find((r) => r.record)?.record || "", "النسبة جنب كل هدف: كم مرة وصل السعر له تاريخيًا قبل الوقف. تحليل، مو توصية. الإشارة الكاملة توصلك أول ما تتحقق كل الشروط."].filter(Boolean).join("\n\n");
+  const acts = await activities(reads.map((r) => r.code));
+  const view = await write(ANALYST, `هذي أسهم أمريكية قريبة من إشارة دخول، مع الناقص لكل واحد وأرقامها:\n\n${reads.map((r) => `${r.code} (ناقصه: ${r.why})\n${r.text}`).join("\n\n")}\n\nرتّب الـ ${reads.length} أسهم كلها من الأقوى للأضعف، سطر واحد لكل سهم (${reads.length} أسطر، ولا تترك ولا سهم): ليش، والشي اللي يأكد الدخول (السعر أو السيولة). بالعربي البسيط، اكتب رمز السهم بالإنجليزي بس والباقي عربي، بدون مقدمات، ولا تضمن ربح.`, { maxTokens: 8000 }).catch(() => null);
+  return [
+    head("tech"),
+    "أقرب الأسهم لإشارة دخول كاملة:",
+    reads.map((r) => { const L = levelsOf(r.full); const px = Number((r.full.match(/السعر الآن: ([\d.,]+)\$ \(([-+\d.]+)%/) || [])[1]?.replace(/,/g, "")); const chg = Number((r.full.match(/السعر الآن: [\d.,]+\$ \(([-+\d.]+)%/) || [])[1]); return stockBlock(r.code, { act: acts[r.code], price: px, chg, lo: L.lo, hi: L.hi, stop: L.stop, targets: L.targets, note: `⏳ ناقصه: ${r.why}` }); }).join("\n\n"),
+    view ? `🧠 رأي المحلل:\n${view}` : "",
+    reads.find((r) => r.record)?.record || "",
+    "تحليل، مو توصية. الإشارة الكاملة توصلك أول ما تتحقق كل الشروط.",
+  ].filter(Boolean).join("\n\n");
 }
 
 // ---------- 📰 محلل النتائج ----------
@@ -174,10 +275,16 @@ async function earn(ms = Date.now(), phase = "post") {
     const h = (await newsOf(`US:${r.code}`).catch(() => ({ items: [] }))).items.find((x) => !x.time || x.time >= ms - 12 * 3600e3);
     out.push({ ...r, move, price: q?.price, beat: beatLine(surp), head: h?.title });
   }
-  const view = await write(ANALYST, `شركات أمريكية أعلنت نتائجها ${pre ? "الصبح قبل الافتتاح، وحركتها قبل الافتتاح" : "الليلة، وحركتها بعد الإغلاق"} وآخر خبر:\n${out.map((r) => `${r.code} ${r.name}: ${r.move == null ? "—" : pct(r.move)} · ${r.beat} · ${r.head || ""}`).join("\n")}\n\nبسطرين: أقوى نتيجة وأضعف نتيجة وليش، بالعربي البسيط، بدون ضمانات.`, { maxTokens: 6000 }).catch(() => null);
+  const view = await write(ANALYST, `شركات أمريكية أعلنت نتائجها ${pre ? "الصبح قبل الافتتاح، وحركتها قبل الافتتاح" : "الليلة، وحركتها بعد الإغلاق"} وآخر خبر:\n${out.map((r) => `${r.code} ${r.name}: ${r.move == null ? "—" : pct(r.move)} · ${r.beat} · ${r.head || ""}`).join("\n")}\n\nبسطرين: أقوى نتيجة وأضعف نتيجة وليش، بالعربي البسيط (رمز السهم بالإنجليزي بس، والباقي عربي، وترجم معنى الأخبار)، بدون ضمانات.`, { maxTokens: 6000 }).catch(() => null);
+  const acts = await activities(out.map((r) => r.code));
+  for (const r of out) {
+    const { price: _, ...L } = await levels(r.code, r.price);
+    Object.assign(r, L);
+  }
   return [
     head("earn"),
-    out.map((r) => `${r.move == null ? "⚪" : r.move >= 0 ? "🟢" : "🔴"} ${r.code}${mine.has(r.code) ? " 💼" : ""} · ${r.name.slice(0, 26)}${r.price ? `: ${n2(r.price)}$` : ""}${r.move != null ? ` (${pct(r.move)} ${pre ? "قبل الافتتاح" : "بعد الإغلاق"})` : ""}${r.beat ? `\n   ${r.beat}` : ""}${r.head ? `\n   📰 ${r.head.slice(0, 90)}` : ""}`).join("\n"),
+    `نتائج ${pre ? "الصبح قبل الافتتاح" : "الليلة بعد الإغلاق"}:`,
+    out.map((r) => stockBlock(r.code, { act: acts[r.code], mine: mine.has(r.code), price: r.price, chg: r.move, lo: r.lo, hi: r.hi, stop: r.stop, targets: r.targets, fresh: r.fresh, note: [r.move == null ? "" : `${r.move >= 0 ? "🟢" : "🔴"} ${pre ? "قبل الافتتاح" : "بعد الإغلاق"} ${pct(r.move)}`, r.beat].filter(Boolean).join(" · ") })).join("\n\n"),
     view ? `🧠 رأي المحلل:\n${view}` : "",
     pre ? "حركة ما قبل الافتتاح بسيولة خفيفة، والاتجاه الحقيقي يبان بعد الافتتاح بنص ساعة." : "حركة ما بعد الإغلاق بسيولة خفيفة، والاتجاه الحقيقي يبان بكرة بعد الافتتاح.",
   ]
@@ -222,13 +329,13 @@ export function momentumRow(code, b) {
   return { code, price: t.close, chg, rel, buy: Math.round(pos * 100), rsi: Math.round(rsi), entry, stop, targets: [1, 2, 3].map((k) => +(entry + k * r).toFixed(2)), score: rel * (pos + 0.5) };
 }
 
-export function momentumText(rows) {
-  if (!rows.length) return `${head("momentum")}\n\nما في سهم كبير اخترق أمس بكل الشروط (سيولة 1.5x، وإغلاق قرب القمة، وفوق متوسط 50 و200، وRSI بين 50 و72). أحيانًا الأفضل ما تدخل.`;
+export function momentumText(rows, acts = {}) {
+  if (!rows.length) return `${head("momentum")}\n\nما في سهم كبير اخترق أمس بكل الشروط (سيولة 1.5 ضعف، وإغلاق قرب القمة، وفوق متوسط 50 و200 يوم، وRSI بين 50 و72). أحيانًا الأفضل ما تدخل.`;
   return [
     head("momentum"),
-    "أقوى اختراقات أمس (من أكبر 300 سهم):",
-    rows.map((r, i) => `${i + 1}️⃣ ${r.code}: ${n2(r.price)}$ (${pct(r.chg)}) · سيولة ${n2(r.rel, 1)}x · شراء ${r.buy}% · RSI ${r.rsi}\n   🟢 الدخول فوق: ${n2(r.entry)}$ · 🛑 الوقف: ${n2(r.stop)}$ (${pct((r.stop / r.entry - 1) * 100)})\n   🎯 ${r.targets.map((x) => `${n2(x)}$`).join(" · ")}`).join("\n\n"),
-    "الدخول بس لو السعر عدّى قمة أمس بعد الافتتاح. وانتظر أول 15 دقيقة. تحليل، مو توصية.",
+    "أقوى اختراقات أمس (من أكبر 300 سهم أمريكي):",
+    rows.map((r) => stockBlock(r.code, { act: acts[r.code], price: r.price, chg: r.chg, entry: r.entry, stop: r.stop, targets: r.targets, note: `📊 سيولة ${n2(r.rel, 1)} ضعف · شراء ${r.buy}% · RSI ${r.rsi}` })).join("\n\n"),
+    "الدخول بس لو السعر عدّى قمة أمس بعد الافتتاح، وانتظر أول 15 دقيقة. تحليل، مو توصية.",
   ].join("\n\n");
 }
 
@@ -251,7 +358,7 @@ async function momentum() {
   );
   const top = found.sort((a, b) => b.score - a.score).slice(0, 5);
   for (const r of top) pick("momentum", r.code, { price: r.entry, stop: r.stop, t1: r.targets[0], entry: r.entry });
-  return momentumText(top);
+  return momentumText(top, await activities(top.map((r) => r.code)));
 }
 
 // ---------- 🔔 متابعة توصيات اليوم: عند الافتتاح وبعد الإغلاق ----------
