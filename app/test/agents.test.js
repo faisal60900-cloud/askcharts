@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 process.env.QT_DATA_DIR ||= mkdtempSync(path.join(os.tmpdir(), "agents-"));
-const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText } = await import("../lib/agents.js");
+const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText } = await import("../lib/agents.js");
 
 test("the risk manager: profit in dollars and dinars, the stop's result, and where to raise it", () => {
   const t = riskText([{ market: "us", code: "UBER", name: "UBER", mine: true, entry: 65.83, stop: 59.5, targets: [72, 75, 80, 88, 100], qty: 493, last: 69.46 }]);
@@ -62,6 +62,7 @@ test("the clock: each agent once a day at its time, US weekdays and Kuwaiti work
   assert.deepEqual(due(fri, { "insiders|2026-11-06": 1 }), []);
   // 9:10 New York: the technical analyst
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 14, 10), {}).map((x) => x[0]), ["tech"]);
+  assert.deepEqual(due(Date.UTC(2026, 10, 6, 14, 20), {}).map((x) => x[0]), ["tech", "momentum"]);
   // 16:15 and 16:50 New York: risk, then results
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 15), {}).map((x) => x[0]), ["risk"]);
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 50), {}).map((x) => x[0]), ["earn"]);
@@ -89,7 +90,7 @@ test("the HR review: each analyst's picks against the prices after them", () => 
   assert.deepEqual(r.tech.map((x) => [x.code, x.outcome, +x.change.toFixed(1)]), [["AAA", "target", 5], ["BBB", "stop", -4], ["CCC", "open", 1]]);
   const t = hrText(r);
   assert.match(t, /^👩‍💼 مريم · مديرة الموارد البشرية/);
-  assert.match(t, /📈 سالم \(المحلل الفني\): 3 سهم\n   🎯 حقق الهدف الأول: 1 · 🛑 ضرب الوقف: 1 · ⏳ للحين: 1 · نسبة النجاح 50%/);
+  assert.match(t, /📈 سالم \(المحلل الفني\): 3 توصية · نجاح 50% \(1 هدف، 1 وقف\) · متوسط \+0\.7%\n   التقييم: ✅ جيد/);
   assert.match(t, /🕵️ خالد \(متتبع الكبار\): 1 سهم[^\n]*\n   متوسط حركتها من سعر شراء المدير: \+5\.0%/);
   assert.match(hrText({ tech: [], insiders: [] }), /ما في توصيات كافية للتقييم/);
 });
@@ -103,4 +104,35 @@ test("the hiring announcement names the team", () => {
 test("the HR review is due Friday after the US close", () => {
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 35), {}).map((x) => x[0]), ["hr"]);
   assert.deepEqual(due(Date.UTC(2026, 10, 5, 21, 35), {}).map((x) => x[0]), []);
+});
+
+test("HR lets an analyst go: six closed picks, under 40% at the first target, losing on average", () => {
+  const mk = (outcome, change) => ({ outcome, change });
+  assert.equal(verdict([mk("stop", -4), mk("stop", -4), mk("stop", -4), mk("stop", -4), mk("target", 5), mk("open", 1)]).fire, false); // five closed
+  const bad = verdict([mk("stop", -4), mk("stop", -4), mk("stop", -4), mk("stop", -4), mk("stop", -4), mk("target", 5)]);
+  assert.equal(bad.fire, true);
+  assert.equal(bad.rate, 17);
+  const ok = verdict([mk("stop", -4), mk("stop", -4), mk("stop", -4), mk("target", 6), mk("target", 6), mk("target", 6)]);
+  assert.equal(ok.fire, false);
+  const t = hrText({ tech: [{ code: "A", day: "2026-11-02", outcome: "stop", change: -4 }], momentum: [], insiders: [] }, { fired: ["tech"] });
+  assert.match(t, /🚪 قرار الفصل: سالم \(المحلل الفني\)/);
+  assert.match(t, /اكتب «رجع سالم»/);
+});
+
+test("the momentum analyst: yesterday's breakout on volume, near the high, over the averages", () => {
+  // 220 days rising slowly, then a breakout day on three times the volume
+  const b = Array.from({ length: 220 }, (_, i) => ({ time: i * 86400, open: 50 + i * 0.1, high: 50.5 + i * 0.1, low: 49.5 + i * 0.1, close: 50 + i * 0.1, volume: 1e6 + (i % 5) * 1e5 }));
+  // a pause so RSI isn't overbought
+  for (let i = 200; i < 220; i++) Object.assign(b[i], { open: 70, high: 70.5, low: 69.5, close: 70 + (i % 2 ? 0.3 : -0.3) });
+  b.push({ time: 221 * 86400, open: 70.2, high: 72, low: 70, close: 71.8, volume: 3.6e6 });
+  const r = momentumRow("ABC", b);
+  assert.ok(r, "a breakout");
+  assert.equal(r.entry, 72.14);
+  assert.equal(r.stop, 69.65);
+  assert.deepEqual(r.targets, [74.63, 77.12, 79.61]);
+  assert.match(momentumText([r]), /1️⃣ ABC: 71\.8\$ \(\+[\d.]+%\) · سيولة [\d.]+x · شراء 90% · RSI \d+\n   🟢 الدخول فوق: 72\.14\$ · 🛑 الوقف: 69\.65\$/);
+  // no breakout on ordinary volume
+  b.at(-1).volume = 1e6;
+  assert.equal(momentumRow("ABC", b), null);
+  assert.match(momentumText([]), /أحيانًا الأفضل ما تدخل/);
 });
