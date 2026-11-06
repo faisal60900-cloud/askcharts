@@ -25,6 +25,7 @@ import * as watchlist from "./lib/watchlist.js";
 import * as kwflow from "./lib/kwflow.js";
 import * as usflow from "./lib/usflow.js";
 import * as premovers from "./lib/premovers.js";
+import * as agents from "./lib/agents.js";
 import { sectors } from "./lib/sectors.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
@@ -482,6 +483,11 @@ async function handle(req, res) {
     if (p === "/api/uswatch/ai-test" && req.method === "POST") return send(res, 200, await uswatch.aiTest());
     if (p === "/api/uswatch/preview") return send(res, 200, await uswatch.preview(q.code));
     if (p === "/api/uswatch/radar" && req.method === "POST") return send(res, 200, await uswatch.radar());
+    if (p === "/api/agents") {
+      if (req.method === "POST") return send(res, 200, agents.update(await readBody(req, 1e4)));
+      return send(res, 200, agents.settings());
+    }
+    if (p === "/api/agents/run" && req.method === "POST") return send(res, 200, { text: await agents.run(String(q.name || "")).catch((e) => `خطأ: ${e.message}`) });
     if (p === "/api/earnings/surprise") return send(res, 200, await data.nasdaqSurprise(String(q.code || "").toUpperCase()));
     if (p === "/api/uswatch/movers" && req.method === "POST") return send(res, 200, { text: await premovers.movers({ size: uswatch.settings().size }) });
     for (const [k, W] of [["ae", aewatch]]) {
@@ -733,6 +739,7 @@ if (isMain) {
   uswatch.start();
   sawatch.start();
   aewatch.start();
+  agents.start();
   tgbot.start();
   console.log(
     `\n  AskCharts ${VERSION} is running\n\n  Open:  ${url}\n  Stop:  Ctrl+C\n  Data:  ${store.DATA_DIR}\n`,
