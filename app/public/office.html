@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مكتب الفريق · AskCharts</title>
+<!-- مكتب الفريق: the agents of lib/agents.js on one page: who they are, when they write, their
+     record with you, their last report (open it), on or off, a report now, today's picks, and
+     مريم's decisions. Reads /api/agents every minute. -->
+<style>
+  :root {
+    --bg: #0f1218; --panel: #171b23; --line: #262b36; --text: #e6e8ee; --muted: #8a93a6;
+    --accent: #7c4dff; --good: #22ab94; --bad: #f23645; --warn: #f0b429;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f5f6fa; --panel: #ffffff; --line: #e3e6ee; --text: #1b1f2a; --muted: #687187; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header h1 { margin: 0; font-size: 20px; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  header .sp { flex: 1; }
+  main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
+  .hr { background: linear-gradient(135deg, rgba(124, 77, 255, 0.16), rgba(41, 98, 255, 0.1)); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 18px; display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .hr .face { font-size: 34px; }
+  .hr .txt { flex: 1; min-width: 240px; }
+  .hr b { font-size: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .card.off { opacity: 0.55; }
+  .top { display: flex; align-items: center; gap: 10px; }
+  .icon { font-size: 28px; width: 44px; height: 44px; display: grid; place-items: center; background: var(--bg); border-radius: 12px; }
+  .name { font-weight: 700; font-size: 16px; }
+  .role { color: var(--muted); font-size: 13px; }
+  .job { font-size: 14px; }
+  .when { font-size: 13px; color: var(--muted); }
+  .rec { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 6px 10px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--bg); color: var(--muted); }
+  .badge.on { color: var(--good); }
+  .badge.fired { color: var(--bad); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: 0.5; cursor: wait; }
+  details { border-top: 1px solid var(--line); padding-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  pre { white-space: pre-wrap; font: 13.5px/1.7 system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; margin: 8px 0 0; max-height: 420px; overflow: auto; }
+  h2 { font-size: 17px; margin: 26px 0 10px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 14px; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: right; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  td bdi { direction: ltr; }
+  .empty { color: var(--muted); padding: 14px; }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+  @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } header { padding: 14px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <div style="font-size: 26px">👥</div>
+  <div>
+    <h1>مكتب الفريق</h1>
+    <div class="sub">وكلاءك وتقاريرهم الخاصة · إضافة على إشارات البوت</div>
+  </div>
+  <div class="sp"></div>
+  <span class="sub" id="at"></span>
+  <button id="refresh">تحديث</button>
+</header>
+<main>
+  <div class="hr" id="hr"></div>
+  <div class="grid" id="team"></div>
+  <h2>📋 توصيات الفريق الأخيرة</h2>
+  <div id="picks"></div>
+  <p class="note">الأهداف والوقف من مسح السوق، والتوصيات تحليل، مو ضمان. مريم تقيّم الفريق كل جمعة بالأرقام، واللي ما ينجح تفصله. الأوقات بتوقيت الكويت.</p>
+</main>
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const ago = (t) => {
+  if (!t) return "";
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 1 ? "الحين" : m < 60 ? `قبل ${m} دقيقة` : m < 1440 ? `قبل ${Math.round(m / 60)} ساعة` : new Date(t).toLocaleDateString("ar-KW", { weekday: "long", day: "numeric", month: "long" });
+};
+const post = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-qt": "1" }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
+let data = null;
+
+function render() {
+  const d = data;
+  const hr = d.agents.hr;
+  const fired = Object.keys(d.fired || {});
+  $("#hr").innerHTML = `<div class="face">${hr.icon}</div><div class="txt"><b>${esc(hr.name)} · ${esc(hr.ar)}</b><div>${esc(hr.job)} · ${esc(hr.when)}</div>
+    ${fired.length ? `<div style="color: var(--bad); margin-top: 6px">🚪 مفصولين: ${fired.map((k) => `${esc(d.agents[k].name)} (${esc(d.agents[k].ar)})`).join("، ")}</div>` : `<div style="color: var(--good); margin-top: 6px">✅ الفريق كامل، وما في أحد مفصول</div>`}
+    ${d.last.hr ? `<details><summary>آخر رسالة من ${esc(hr.name)} · ${ago(d.last.hr.at)}</summary><pre>${esc(d.last.hr.text)}</pre></details>` : ""}</div>
+    <div class="row"><button data-run="hr">📊 تقييم الحين</button></div><pre data-out="hr" hidden style="flex-basis: 100%"></pre>`;
+  $("#team").innerHTML = Object.entries(d.agents)
+    .filter(([k]) => k !== "hr")
+    .map(([k, a]) => {
+      const on = d.on[k] !== false, isFired = !!d.fired?.[k];
+      const last = d.last[k];
+      return `<div class="card ${on ? "" : "off"}">
+        <div class="top"><div class="icon">${a.icon}</div><div><div class="name">${esc(a.name)}</div><div class="role">${esc(a.ar)}</div></div><div style="flex: 1"></div>
+          <span class="badge ${isFired ? "fired" : on ? "on" : ""}">${isFired ? "🚪 مفصول" : on ? "● على مكتبه" : "⏸️ موقوف"}</span></div>
+        <div class="job">${esc(a.job)}</div>
+        <div class="when">⏰ ${esc(a.when)}</div>
+        ${d.record[k] ? `<div class="rec">📋 سجله معك: ${esc(d.record[k])}</div>` : `<div class="rec" style="color: var(--muted)">📋 سجله يبدأ مع أول تقييم يوم الجمعة</div>`}
+        <div class="row">
+          <button class="primary" data-run="${k}">تقريره الحين</button>
+          <button data-send="${k}">أرسله لتليجرام</button>
+          ${isFired ? `<button data-rehire="${k}">رجّعه</button>` : `<button data-toggle="${k}">${on ? "وقّفه" : "شغّله"}</button>`}
+        </div>
+        ${last ? `<details><summary>آخر تقرير · ${ago(last.at)}</summary><pre>${esc(last.text)}</pre></details>` : `<div class="when">ما أرسل تقرير للحين</div>`}
+        <pre data-out="${k}" hidden></pre>
+      </div>`;
+    })
+    .join("");
+  const picks = d.picks || [];
+  $("#picks").innerHTML = picks.length
+    ? `<table><thead><tr><th>اليوم</th><th>مين</th><th>السهم</th><th>النشاط</th><th>الدخول</th><th>الهدف الأول</th><th>الوقف</th></tr></thead><tbody>
+      ${picks.map((p) => { const a = d.agents[p.agent] || {}; return `<tr><td>${esc(p.day)}</td><td>${a.icon || ""} ${esc(a.name || p.agent)}</td><td><b><bdi>${esc(p.code)}</bdi></b></td><td>${esc(d.ar[p.code] || "")}</td><td><bdi>${p.entry ? `${p.entry}$` : p.lo ? `${p.lo}–${p.hi}$` : p.price ? `${p.price}$` : "—"}</bdi></td><td><bdi>${p.t1 ? `${p.t1}$` : "—"}</bdi></td><td><bdi>${p.stop ? `${p.stop}$` : "—"}</bdi></td></tr>`; }).join("")}
+      </tbody></table>`
+    : `<div class="empty">للحين ما في توصيات. أول توصيات اليوم من خالد (4:30)، وسالم (5:05)، وسعود (5:15) العصر.</div>`;
+  $("#at").textContent = `آخر تحديث ${new Date().toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+async function load() {
+  data = await fetch("/api/agents").then((r) => r.json());
+  render();
+}
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.id === "refresh") return load();
+  const k = b.dataset.run || b.dataset.send || b.dataset.toggle || b.dataset.rehire;
+  if (!k) return;
+  b.disabled = true;
+  try {
+    if (b.dataset.toggle) await post("/api/agents", { on: { [k]: !(data.on[k] !== false) } });
+    else if (b.dataset.rehire) await post(`/api/agents/rehire?name=${k}`);
+    else {
+      const old = b.textContent;
+      b.textContent = "يجهّز…";
+      const r = await post(`/api/agents/run?name=${k}${b.dataset.send ? "&send=1" : ""}`);
+      b.textContent = old;
+      const out = document.querySelector(`[data-out="${k}"]`);
+      if (out) { out.hidden = false; out.textContent = (b.dataset.send ? "✅ انرسل لتليجرام\n\n" : "") + (r.text || "ما في شي للحين."); }
+    }
+    if (b.dataset.toggle || b.dataset.rehire) await load();
+  } finally {
+    b.disabled = false;
+  }
+});
+
+load();
+setInterval(load, 60e3);
+</script>
+</body>
+</html>

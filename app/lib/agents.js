@@ -38,7 +38,23 @@ st.fired ||= {}; // agent → the day HR let it go
 st.record ||= {}; // agent → its last review line, shown on its reports
 for (const k of Object.keys(AGENTS)) if (!(k in st.on)) st.on[k] = true;
 const save = () => store.write("agents", st);
-export const settings = () => ({ on: st.on, agents: AGENTS, sent: st.sent });
+// the office page (public/office.html): the team, each one's last report and record, today's picks
+export const settings = () => ({
+  on: st.on,
+  agents: AGENTS,
+  sent: st.sent,
+  last: st.last || {},
+  record: st.record || {},
+  fired: st.fired || {},
+  picks: (st.picks || []).slice(-40).reverse(),
+  ar: st.ar || {},
+});
+function keep(name, text) {
+  if (!text) return;
+  const owner = { earnpre: "earn", open: "momentum", close: "momentum", kickoff: "hr", intro: "hr" }[name] || name;
+  (st.last ||= {})[owner] = { at: Date.now(), text: text.slice(0, 6000) };
+  save();
+}
 export function update({ on } = {}) {
   for (const k of Object.keys(AGENTS)) if (on && k in on) st.on[k] = !!on[k];
   save();
@@ -449,7 +465,10 @@ async function live(send, ms = Date.now()) {
   st.live ||= {};
   const ev = liveEvents(picks, await liveState(codes, ms), st.live, st.ar || {});
   save();
-  for (const t of ev) await send(t);
+  for (const t of ev) {
+    keep(t.startsWith("🚀") ? "momentum" : "tech", t);
+    await send(t);
+  }
   return ev.length;
 }
 
@@ -643,6 +662,7 @@ export function due(ms = Date.now(), sent = st.sent) {
 // one report now, to Telegram too
 export async function sendNow(name) {
   const text = await run(name);
+  keep(name, text);
   if (text && kwwatch.settings().telegram) await kwwatch.sendTelegram(text.length > 3900 ? text.slice(0, 3890) + "…" : text, name === "kw" ? "kw" : "us");
   return text;
 }
@@ -655,6 +675,7 @@ async function tick() {
     st.sent[`${name}|${day}`] = Date.now(); // marked first, so a failing feed doesn't retry every minute
     save();
     const text = await run(name).catch((e) => `${head(name)}\n\nما قدرت أجهز التقرير اليوم: ${e.message}`);
+    keep(name, text);
     if (text && kwwatch.settings().telegram) await kwwatch.sendTelegram(text.length > 3900 ? text.slice(0, 3890) + "…" : text, name === "kw" ? "kw" : "us").catch(() => {});
   }
   // any time in the session: the picks that confirm (every 5 minutes), and the big insider buys (every 30)

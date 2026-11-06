@@ -488,6 +488,7 @@ async function handle(req, res) {
       return send(res, 200, agents.settings());
     }
     if (p === "/api/agents/run" && req.method === "POST") return send(res, 200, { text: await (q.send === "1" ? agents.sendNow : agents.run)(String(q.name || "")).catch((e) => `خطأ: ${e.message}`) });
+    if (p === "/api/agents/rehire" && req.method === "POST") return send(res, 200, { text: agents.rehire(String(q.name || "")) });
     if (p === "/api/earnings/surprise") return send(res, 200, await data.nasdaqSurprise(String(q.code || "").toUpperCase()));
     if (p === "/api/uswatch/movers" && req.method === "POST") return send(res, 200, { text: await premovers.movers({ size: uswatch.settings().size }) });
     for (const [k, W] of [["ae", aewatch]]) {
