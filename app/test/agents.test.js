@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 process.env.QT_DATA_DIR ||= mkdtempSync(path.join(os.tmpdir(), "agents-"));
-const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText } = await import("../lib/agents.js");
+const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText, followText } = await import("../lib/agents.js");
 
 test("the risk manager: profit in dollars and dinars, the stop's result, and where to raise it", () => {
   const t = riskText([{ market: "us", code: "UBER", name: "UBER", mine: true, entry: 65.83, stop: 59.5, targets: [72, 75, 80, 88, 100], qty: 493, last: 69.46 }]);
@@ -64,7 +64,10 @@ test("the clock: each agent once a day at its time, US weekdays and Kuwaiti work
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 14, 10), {}).map((x) => x[0]), ["tech"]);
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 14, 20), {}).map((x) => x[0]), ["tech", "momentum"]);
   // 16:15 and 16:50 New York: risk, then results
-  assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 15), {}).map((x) => x[0]), ["risk"]);
+  assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 15), {}).map((x) => x[0]), ["close", "risk"]);
+  // 8:50 New York: نورة on the morning's results; 10:05: the picks after the open
+  assert.deepEqual(due(Date.UTC(2026, 10, 6, 13, 50), {}).map((x) => x[0]), ["earnpre"]);
+  assert.deepEqual(due(Date.UTC(2026, 10, 6, 15, 5), {}).map((x) => x[0]), ["open"]);
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 50), {}).map((x) => x[0]), ["earn"]);
   // Sunday 8 November, 10:35 in Kuwait: Kuwait's analyst (and nothing American on a Sunday)
   assert.deepEqual(due(Date.UTC(2026, 10, 8, 7, 35), {}), [["kw", "2026-11-08"]]);
@@ -135,4 +138,24 @@ test("the momentum analyst: yesterday's breakout on volume, near the high, over 
   b.at(-1).volume = 1e6;
   assert.equal(momentumRow("ABC", b), null);
   assert.match(momentumText([]), /أحيانًا الأفضل ما تدخل/);
+});
+
+test("the follow-up after the open: where each of today's picks stands", () => {
+  const picks = [
+    { agent: "momentum", code: "AAA", day: "2026-11-06", price: 50, entry: 50, stop: 48, t1: 52 },
+    { agent: "momentum", code: "BBB", day: "2026-11-06", price: 20, entry: 20, stop: 19, t1: 21 },
+    { agent: "tech", code: "CCC", day: "2026-11-06", price: 78, lo: 74.33, hi: 76, stop: 72.39, t1: 77.94 },
+    { agent: "tech", code: "DDD", day: "2026-11-06", price: 50, lo: 49.5, hi: 50.2, stop: 48.9, t1: 50.9 },
+    { agent: "tech", code: "EEE", day: "2026-11-06", price: 30, stop: 28, t1: 32 },
+  ];
+  const t = followText(picks, { AAA: { price: 50.6, changePct: 2.1 }, BBB: { price: 19.7, changePct: -0.4 }, CCC: { price: 75.2, changePct: -3.5 }, DDD: { price: 51, changePct: 1 }, EEE: { price: 27.5, changePct: -5 } }, "open", { AAA: 71 });
+  assert.match(t, /^🔔 بعد الافتتاح بنص ساعة · متابعة توصيات اليوم/);
+  assert.match(t, /🚀 سعود:\n• AAA: 50\.6\$ \(\+2\.1% اليوم\) · شراء 71%\n   ✅ عدّى نقطة الدخول · الدخول 50\$ · الوقف 48\$ · الهدف 52\$/);
+  assert.match(t, /• BBB: [^\n]*\n   ⏳ للحين تحت نقطة الدخول/);
+  assert.match(t, /📈 سالم:\n• CCC: [^\n]*\n   ✅ داخل منطقة الشراء · المنطقة 74\.33–76\$/);
+  assert.match(t, /• DDD: [^\n]*\n   🎯 وصل الهدف الأول/);
+  assert.match(t, /• EEE: [^\n]*\n   🛑 تحت الوقف/);
+  assert.ok(t.indexOf("سعود") < t.indexOf("سالم"));
+  assert.equal(followText(picks, {}, "close"), "");
+  assert.match(followText(picks, { AAA: { price: 50.6 } }, "close"), /^🔔 بعد الإغلاق/);
 });

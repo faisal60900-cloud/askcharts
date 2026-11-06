@@ -22,10 +22,10 @@ import { sectors } from "./sectors.js";
 import { sectorsText } from "../public/lib/sectors.js";
 
 export const AGENTS = {
-  tech: { icon: "📈", name: "سالم", ar: "المحلل الفني", when: "قبل افتتاح أمريكا (5:05 العصر)", job: "يدوّر على أقرب الأسهم لإشارة دخول، بمنطقة شراء ووقف وأهداف" },
-  momentum: { icon: "🚀", name: "سعود", ar: "محلل الزخم", when: "قبل افتتاح أمريكا (5:15 العصر)", job: "يمسح أكبر 300 سهم أمريكي ويختار اللي اخترقت أمس بسيولة وشراء قوي، بدخول ووقف وأهداف" },
+  tech: { icon: "📈", name: "سالم", ar: "المحلل الفني", when: "قبل الافتتاح (5:05 العصر)، ومتابعة 6:00 المغرب و12:05 بالليل", job: "يدوّر على أقرب الأسهم لإشارة دخول، بمنطقة شراء ووقف وأهداف" },
+  momentum: { icon: "🚀", name: "سعود", ar: "محلل الزخم", when: "قبل الافتتاح (5:15 العصر)، ومتابعة 6:00 المغرب و12:05 بالليل", job: "يمسح أكبر 300 سهم أمريكي ويختار اللي اخترقت أمس بسيولة وشراء قوي، بدخول ووقف وأهداف" },
   insiders: { icon: "🕵️", name: "خالد", ar: "متتبع الكبار", when: "قبل افتتاح أمريكا (4:30 العصر)", job: "يتابع مين من المدراء والصناديق اشترى من فلوسه" },
-  earn: { icon: "📰", name: "نورة", ar: "محللة النتائج", when: "بعد إغلاق أمريكا (12:45 بالليل)", job: "تقرا نتائج الشركات الكبيرة أول ما تطلع" },
+  earn: { icon: "📰", name: "نورة", ar: "محللة النتائج", when: "قبل الافتتاح (4:45 العصر) وبعد الإغلاق (12:45 بالليل)", job: "تقرا نتائج الشركات الكبيرة أول ما تطلع" },
   risk: { icon: "🛡️", name: "فهد", ar: "مدير المخاطر", when: "بعد إغلاق أمريكا (12:10 بالليل)", job: "يراجع صفقاتك، ويقول لك وين ترفع الوقف" },
   kw: { icon: "🇰🇼", name: "عبدالله", ar: "محلل الكويت", when: "10:30 الصبح (الأحد–الخميس)", job: "يقرا السيولة والقطاعات في بورصة الكويت" },
   hr: { icon: "👩‍💼", name: "مريم", ar: "مديرة الموارد البشرية", when: "كل جمعة بعد إغلاق أمريكا", job: "تقيّم شغل الفريق بالأرقام: مين توصياته نجحت ومين لا" },
@@ -147,7 +147,8 @@ async function tech() {
     const p = await us.preview(n.code).catch(() => null);
     if (p?.text) {
       const num = (re) => Number((p.text.match(re) || [])[1]?.replace(/,/g, "")) || null;
-      pick("tech", n.code, { price: num(/السعر الآن: ([\d.,]+)\$/), stop: num(/وقف الخسارة الأولي: ([\d.,]+)\$/), t1: num(/1️⃣ ([\d.,]+)\$/) });
+      const zone = p.text.match(/منطقة: ([\d.,]+)\$ – ([\d.,]+)\$/);
+      pick("tech", n.code, { price: num(/السعر الآن: ([\d.,]+)\$/), stop: num(/وقف الخسارة الأولي: ([\d.,]+)\$/), t1: num(/1️⃣ ([\d.,]+)\$/), lo: zone ? Number(zone[1].replace(/,/g, "")) : null, hi: zone ? Number(zone[2].replace(/,/g, "")) : null });
     }
     if (p?.text) reads.push({ code: n.code, why: n.why, text: p.text.split("\n").filter((l) => /السعر الآن|منطقة|وقف الخسارة|1️⃣|2️⃣|3️⃣|مقاومات/.test(l)).join("\n"), record: p.text.split("\n").find((l) => /السجل التاريخي/.test(l)) });
   }
@@ -156,12 +157,13 @@ async function tech() {
 }
 
 // ---------- 📰 محلل النتائج ----------
-async function earn(ms = Date.now()) {
+async function earn(ms = Date.now(), phase = "post") {
   const d = nyDates(ms);
-  const rows = (await nasdaqEarnings(d.today).catch(() => [])).filter((r) => r.when !== "pre");
+  const pre = phase === "pre";
+  const rows = (await nasdaqEarnings(d.today).catch(() => [])).filter((r) => (pre ? r.when === "pre" : r.when !== "pre"));
   const mine = new Set(myCodes("us"));
   const pick = rows.filter((r) => r.cap >= 5e9 || mine.has(r.code)).sort((a, b) => mine.has(b.code) - mine.has(a.code) || b.cap - a.cap).slice(0, 10);
-  if (!pick.length) return `${head("earn")}\n\nما في شركات كبيرة أعلنت نتائجها الليلة.`;
+  if (!pick.length) return `${head("earn")}\n\nما في شركات كبيرة أعلنت نتائجها ${pre ? "الصبح قبل الافتتاح" : "الليلة"}.`;
   const quotes = await nasdaqLiveQuotes(pick.map((r) => r.code), "stocks").catch(() => ({}));
   const out = [];
   for (const r of pick) {
@@ -172,12 +174,12 @@ async function earn(ms = Date.now()) {
     const h = (await newsOf(`US:${r.code}`).catch(() => ({ items: [] }))).items.find((x) => !x.time || x.time >= ms - 12 * 3600e3);
     out.push({ ...r, move, price: q?.price, beat: beatLine(surp), head: h?.title });
   }
-  const view = await write(ANALYST, `شركات أمريكية أعلنت نتائجها الليلة، وحركتها بعد الإغلاق وآخر خبر:\n${out.map((r) => `${r.code} ${r.name}: ${r.move == null ? "—" : pct(r.move)} · ${r.beat} · ${r.head || ""}`).join("\n")}\n\nبسطرين: أقوى نتيجة وأضعف نتيجة وليش، بالعربي البسيط، بدون ضمانات.`, { maxTokens: 6000 }).catch(() => null);
+  const view = await write(ANALYST, `شركات أمريكية أعلنت نتائجها ${pre ? "الصبح قبل الافتتاح، وحركتها قبل الافتتاح" : "الليلة، وحركتها بعد الإغلاق"} وآخر خبر:\n${out.map((r) => `${r.code} ${r.name}: ${r.move == null ? "—" : pct(r.move)} · ${r.beat} · ${r.head || ""}`).join("\n")}\n\nبسطرين: أقوى نتيجة وأضعف نتيجة وليش، بالعربي البسيط، بدون ضمانات.`, { maxTokens: 6000 }).catch(() => null);
   return [
     head("earn"),
-    out.map((r) => `${r.move == null ? "⚪" : r.move >= 0 ? "🟢" : "🔴"} ${r.code}${mine.has(r.code) ? " 💼" : ""} · ${r.name.slice(0, 26)}${r.price ? `: ${n2(r.price)}$` : ""}${r.move != null ? ` (${pct(r.move)} بعد الإغلاق)` : ""}${r.beat ? `\n   ${r.beat}` : ""}${r.head ? `\n   📰 ${r.head.slice(0, 90)}` : ""}`).join("\n"),
+    out.map((r) => `${r.move == null ? "⚪" : r.move >= 0 ? "🟢" : "🔴"} ${r.code}${mine.has(r.code) ? " 💼" : ""} · ${r.name.slice(0, 26)}${r.price ? `: ${n2(r.price)}$` : ""}${r.move != null ? ` (${pct(r.move)} ${pre ? "قبل الافتتاح" : "بعد الإغلاق"})` : ""}${r.beat ? `\n   ${r.beat}` : ""}${r.head ? `\n   📰 ${r.head.slice(0, 90)}` : ""}`).join("\n"),
     view ? `🧠 رأي المحلل:\n${view}` : "",
-    "حركة ما بعد الإغلاق بسيولة خفيفة، والاتجاه الحقيقي يبان بكرة بعد الافتتاح.",
+    pre ? "حركة ما قبل الافتتاح بسيولة خفيفة، والاتجاه الحقيقي يبان بعد الافتتاح بنص ساعة." : "حركة ما بعد الإغلاق بسيولة خفيفة، والاتجاه الحقيقي يبان بكرة بعد الافتتاح.",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -248,15 +250,63 @@ async function momentum() {
     }),
   );
   const top = found.sort((a, b) => b.score - a.score).slice(0, 5);
-  for (const r of top) pick("momentum", r.code, { price: r.entry, stop: r.stop, t1: r.targets[0] });
+  for (const r of top) pick("momentum", r.code, { price: r.entry, stop: r.stop, t1: r.targets[0], entry: r.entry });
   return momentumText(top);
 }
 
+// ---------- 🔔 متابعة توصيات اليوم: عند الافتتاح وبعد الإغلاق ----------
+// Where each of today's picks by سالم and سعود stands: in the zone, over the entry, at the first
+// target, or under the stop. phase "open" (half an hour in) or "close".
+export function followText(picks, quotes, phase, buys = {}) {
+  const rows = picks.filter((p) => quotes[p.code]?.price > 0);
+  if (!rows.length) return "";
+  const status = (p, px) => {
+    if (p.t1 && px >= p.t1) return "🎯 وصل الهدف الأول";
+    if (p.stop && px <= p.stop) return "🛑 تحت الوقف";
+    if (p.entry) return px >= p.entry ? "✅ عدّى نقطة الدخول" : "⏳ للحين تحت نقطة الدخول";
+    if (p.lo && p.hi) return px < p.lo ? "⬇️ تحت منطقة الشراء" : px <= p.hi ? "✅ داخل منطقة الشراء" : "⏳ فوق منطقة الشراء";
+    return "";
+  };
+  const by = (a) => rows.filter((p) => p.agent === a);
+  const block = (a) =>
+    by(a).length
+      ? `${AGENTS[a].icon} ${AGENTS[a].name}:\n${by(a)
+          .map((p) => {
+            const q = quotes[p.code];
+            return `• ${p.code}: ${n2(q.price)}$${Number.isFinite(q.changePct) ? ` (${pct(q.changePct)} اليوم)` : ""}${buys[p.code] != null ? ` · شراء ${buys[p.code]}%` : ""}\n   ${status(p, q.price)}${p.entry ? ` · الدخول ${n2(p.entry)}$` : p.lo ? ` · المنطقة ${n2(p.lo)}–${n2(p.hi)}$` : ""} · الوقف ${n2(p.stop)}$ · الهدف ${n2(p.t1)}$`;
+          })
+          .join("\n")}`
+      : "";
+  return [
+    `🔔 ${phase === "open" ? "بعد الافتتاح بنص ساعة" : "بعد الإغلاق"} · متابعة توصيات اليوم`,
+    block("momentum"),
+    block("tech"),
+    phase === "open" ? "اللي «عدّى نقطة الدخول» بشراء فوق 55% إشارته أقوى. اللي تحت الوقف انتهى." : "مريم تحسب النتيجة النهائية لكل توصية يوم الجمعة.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function follow(phase, ms = Date.now()) {
+  const today = nyDates(ms).today;
+  const picks = st.picks.filter((p) => p.day === today && (p.agent === "tech" || p.agent === "momentum"));
+  if (!picks.length) return "";
+  const codes = [...new Set(picks.map((p) => p.code))];
+  const quotes = await nasdaqLiveQuotes(codes, "stocks").catch(() => ({}));
+  const buys = {};
+  for (const c of codes) {
+    const bars = ((await getCandles(`US:${c}`, "5m", 90).catch(() => ({ candles: [] }))).candles || []).filter((b) => new Date(b.time * 1000).toISOString().slice(0, 10) === new Date(ms).toISOString().slice(0, 10) && b.volume > 0);
+    const vol = bars.reduce((a, b) => a + b.volume, 0);
+    if (vol) buys[c] = Math.round((bars.reduce((a, b) => a + b.volume * (b.high > b.low ? (b.close - b.low) / (b.high - b.low) : 0.5), 0) / vol) * 100);
+  }
+  return followText(picks, quotes, phase, buys);
+}
+
 // ---------- 👩‍💼 الموارد البشرية ----------
-function pick(agent, code, { price = null, stop = null, t1 = null } = {}) {
+function pick(agent, code, { price = null, stop = null, t1 = null, ...extra } = {}) {
   const day = nyDates().today;
   if (!(price > 0) || st.picks.some((p) => p.agent === agent && p.code === code && p.day === day)) return;
-  st.picks.push({ agent, code, day, price, stop, t1 });
+  st.picks.push({ agent, code, day, price, stop, t1, ...extra });
   st.picks = st.picks.slice(-300);
   save();
 }
@@ -357,8 +407,11 @@ export function kickoffText(ms = Date.now()) {
   const list = [
     !fri && !sat ? `${AGENTS.kw.icon} ${AGENTS.kw.name}: 10:30 الصبح` : "",
     `${AGENTS.insiders.icon} ${AGENTS.insiders.name}: 4:30 العصر`,
+    `${AGENTS.earn.icon} ${AGENTS.earn.name}: 4:45 العصر (نتائج الصبح قبل الافتتاح)`,
     `${AGENTS.tech.icon} ${AGENTS.tech.name}: 5:05 العصر`,
     `${AGENTS.momentum.icon} ${AGENTS.momentum.name}: 5:15 العصر`,
+    "🔔 سالم وسعود: 6:00 المغرب (وين وصلت توصياتهم بعد الافتتاح)",
+    "🔔 سالم وسعود: 12:05 بالليل (وين سكّرت توصياتهم)",
     `${AGENTS.risk.icon} ${AGENTS.risk.name}: 12:10 بالليل`,
     `${AGENTS.earn.icon} ${AGENTS.earn.name}: 12:45 بالليل`,
     fri ? `${AGENTS.hr.icon} ${AGENTS.hr.name}: تقييم الأسبوع 12:30 بالليل` : "",
@@ -374,6 +427,9 @@ export async function run(name, ms = Date.now()) {
   if (name === "tech") return tech();
   if (name === "momentum") return momentum();
   if (name === "earn") return earn(ms);
+  if (name === "earnpre") return earn(ms, "pre");
+  if (name === "open") return follow("open", ms);
+  if (name === "close") return follow("close", ms);
   if (name === "kw") return kw();
   if (name === "hr") return hr();
   if (name === "intro") return introText();
@@ -399,6 +455,9 @@ export function due(ms = Date.now(), sent = st.sent) {
   if (nyWork && win(nyMin, 8 * 60 + 30) && !sent[`insiders|${nyDay}`]) out.push(["insiders", nyDay]);
   if (nyWork && win(nyMin, 9 * 60 + 5) && !sent[`tech|${nyDay}`]) out.push(["tech", nyDay]);
   if (nyWork && win(nyMin, 9 * 60 + 15) && !sent[`momentum|${nyDay}`]) out.push(["momentum", nyDay]);
+  if (nyWork && win(nyMin, 8 * 60 + 45) && !sent[`earnpre|${nyDay}`]) out.push(["earnpre", nyDay]);
+  if (nyWork && win(nyMin, 10 * 60) && !sent[`open|${nyDay}`]) out.push(["open", nyDay]);
+  if (nyWork && win(nyMin, 16 * 60 + 5) && !sent[`close|${nyDay}`]) out.push(["close", nyDay]);
   if (nyWork && win(nyMin, 16 * 60 + 10) && !sent[`risk|${nyDay}`]) out.push(["risk", nyDay]);
   if (nyWork && win(nyMin, 16 * 60 + 45, 30) && !sent[`earn|${nyDay}`]) out.push(["earn", nyDay]);
   if (kwWork && win(kwMin, 10 * 60 + 30) && !sent[`kw|${kwDay}`]) out.push(["kw", kwDay]);
@@ -417,7 +476,8 @@ export async function sendNow(name) {
 let timer = null;
 async function tick() {
   for (const [name, day] of due()) {
-    if (!st.on[name]) continue;
+    const owner = { earnpre: "earn", open: "momentum", close: "momentum" }[name] || name;
+    if (!st.on[owner] && !(name !== owner && st.on.tech)) continue;
     st.sent[`${name}|${day}`] = Date.now(); // marked first, so a failing feed doesn't retry every minute
     save();
     const text = await run(name).catch((e) => `${head(name)}\n\nما قدرت أجهز التقرير اليوم: ${e.message}`);
