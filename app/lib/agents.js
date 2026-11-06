@@ -394,19 +394,85 @@ export function followText(picks, quotes, phase, buys = {}) {
     .join("\n\n");
 }
 
+// today's quotes and buying share (the whole day and the last 15 minutes) for some codes
+async function liveState(codes, ms = Date.now()) {
+  const quotes = await nasdaqLiveQuotes(codes, "stocks").catch(() => ({}));
+  const buys = {}, recent = {};
+  const share = (bars) => {
+    const vol = bars.reduce((a, b) => a + b.volume, 0);
+    return vol ? Math.round((bars.reduce((a, b) => a + b.volume * (b.high > b.low ? (b.close - b.low) / (b.high - b.low) : 0.5), 0) / vol) * 100) : null;
+  };
+  for (const c of codes) {
+    const bars = ((await getCandles(`US:${c}`, "5m", 90).catch(() => ({ candles: [] }))).candles || []).filter((b) => new Date(b.time * 1000).toISOString().slice(0, 10) === new Date(ms).toISOString().slice(0, 10) && b.volume > 0);
+    buys[c] = share(bars);
+    recent[c] = share(bars.slice(-3));
+  }
+  return { quotes, buys, recent };
+}
+
 async function follow(phase, ms = Date.now()) {
   const today = nyDates(ms).today;
   const picks = st.picks.filter((p) => p.day === today && (p.agent === "tech" || p.agent === "momentum"));
   if (!picks.length) return "";
-  const codes = [...new Set(picks.map((p) => p.code))];
-  const quotes = await nasdaqLiveQuotes(codes, "stocks").catch(() => ({}));
-  const buys = {};
-  for (const c of codes) {
-    const bars = ((await getCandles(`US:${c}`, "5m", 90).catch(() => ({ candles: [] }))).candles || []).filter((b) => new Date(b.time * 1000).toISOString().slice(0, 10) === new Date(ms).toISOString().slice(0, 10) && b.volume > 0);
-    const vol = bars.reduce((a, b) => a + b.volume, 0);
-    if (vol) buys[c] = Math.round((bars.reduce((a, b) => a + b.volume * (b.high > b.low ? (b.close - b.low) / (b.high - b.low) : 0.5), 0) / vol) * 100);
-  }
+  const { quotes, buys } = await liveState([...new Set(picks.map((p) => p.code))], ms);
   return followText(picks, quotes, phase, buys);
+}
+
+// ---------- ⚡ فرصة الحين: during the session, the moment a pick confirms ----------
+// An analyst writes the moment one of today's picks confirms: over the entry (or inside the zone)
+// with the day's buying at 60% or more and the last 15 minutes buying too; and once more when it
+// reaches its first target or breaks its stop. Each once (mem).
+export function liveEvents(picks, { quotes = {}, buys = {}, recent = {} } = {}, mem = {}, acts = {}) {
+  const ev = [];
+  for (const p of picks) {
+    const q = quotes[p.code];
+    if (!(q?.price > 0)) continue;
+    const px = q.price, a = AGENTS[p.agent];
+    const key = (k) => `${p.agent}|${p.code}|${p.day}|${k}`;
+    const once = (k) => (mem[key(k)] ? false : (mem[key(k)] = 1));
+    const block = (note) => `${a.icon} ${a.name} · ${a.ar}\n${note}\n\n${stockBlock(p.code, { act: acts[p.code], price: px, chg: q.changePct, entry: p.entry, lo: p.lo, hi: p.hi, stop: p.stop, targets: [p.t1].filter(Boolean) })}`;
+    if (p.t1 && px >= p.t1 && once("t1")) ev.push(block(`🎯 ${p.code} وصل الهدف الأول من توصية الصبح. اللي دخل يرفع الوقف لسعر دخوله.`));
+    else if (p.stop && px <= p.stop && once("stop")) ev.push(block(`🛑 ${p.code} نزل تحت وقف الخسارة. توصية اليوم انتهت.`));
+    else {
+      const inEntry = p.entry ? px >= p.entry && px < (p.t1 || Infinity) : p.lo && p.hi ? px >= p.lo && px <= p.hi : false;
+      if (inEntry && buys[p.code] >= 60 && recent[p.code] >= 60 && once("go")) ev.push(block(`⚡ فرصة الحين: ${p.code} ${p.entry ? "عدّى نقطة الدخول" : "داخل منطقة الشراء"} والشراء قوي (اليوم ${buys[p.code]}%، وآخر 15 دقيقة ${recent[p.code]}%).\nتأكيد، مو ضمان. حط الوقف من البداية.`));
+    }
+  }
+  return ev;
+}
+
+async function live(send, ms = Date.now()) {
+  const today = nyDates(ms).today;
+  const picks = st.picks.filter((p) => p.day === today && (p.agent === "tech" || p.agent === "momentum") && st.on[p.agent]);
+  if (!picks.length) return 0;
+  const codes = [...new Set(picks.map((p) => p.code))];
+  st.live ||= {};
+  const ev = liveEvents(picks, await liveState(codes, ms), st.live, st.ar || {});
+  save();
+  for (const t of ev) await send(t);
+  return ev.length;
+}
+
+// ⚡ خالد: a big purchase by a company's own chief (or Berkshire) the moment it's filed
+export function bigInsiderNew(rows, seen = {}, { since = "", min = 1e6 } = {}) {
+  const top = /chief executive|\bceo\b|\bcfo\b|chief financial|\bpres|chair|\bcob\b/i;
+  return rows.filter((r) => r.value >= min && (!since || r.date >= since) && (top.test(r.title) || /berkshire/i.test(r.who)) && !seen[`${r.code}|${r.date}|${r.qty}`] && (seen[`${r.code}|${r.date}|${r.qty}`] = 1));
+}
+async function liveInsiders(send, ms = Date.now()) {
+  const res = await fetch("http://openinsider.com/latest-insider-purchases-25k", { headers: { "user-agent": "Mozilla/5.0 AskCharts" }, signal: AbortSignal.timeout(20000) });
+  if (!res.ok) return 0;
+  const rows = parseOpenInsider(await res.text());
+  st.seenIns ||= {};
+  const first = !Object.keys(st.seenIns).length; // the first look only learns what's already there
+  const fresh = bigInsiderNew(rows, st.seenIns, { since: new Date(ms - 3 * 86400e3).toISOString().slice(0, 10) });
+  save();
+  if (first) return 0;
+  const acts = await activities(fresh.map((r) => r.code));
+  for (const r of fresh) {
+    const L = await levels(r.code).catch(() => ({}));
+    await send(`${AGENTS.insiders.icon} ${AGENTS.insiders.name} · ${AGENTS.insiders.ar}\n⚡ شراء كبير جديد من داخل الشركة\n\n${stockBlock(r.code, { act: acts[r.code], price: L.price, lo: L.lo, hi: L.hi, stop: L.stop, targets: L.targets, fresh: L.fresh, note: `👔 ${roleAr(r.title, r.who)} اشترى ${n2(r.qty, 0)} سهم على ${n2(r.price)}$ = ${n2(r.value / 1e6, 1)} مليون$ (${r.date})` })}\n\nشراء المدير إشارة ثقة، مو توقيت.`);
+  }
+  return fresh.length;
 }
 
 // ---------- 👩‍💼 الموارد البشرية ----------
@@ -518,6 +584,7 @@ export function kickoffText(ms = Date.now()) {
     `${AGENTS.tech.icon} ${AGENTS.tech.name}: 5:05 العصر`,
     `${AGENTS.momentum.icon} ${AGENTS.momentum.name}: 5:15 العصر`,
     "🔔 سالم وسعود: 6:00 المغرب (وين وصلت توصياتهم بعد الافتتاح)",
+    "⚡ وأي وقت وقت السوق: لو توصية تأكدت بشراء قوي، أو وصلت الهدف، أو مدير كبير اشترى",
     "🔔 سالم وسعود: 12:05 بالليل (وين سكّرت توصياتهم)",
     `${AGENTS.risk.icon} ${AGENTS.risk.name}: 12:10 بالليل`,
     `${AGENTS.earn.icon} ${AGENTS.earn.name}: 12:45 بالليل`,
@@ -590,8 +657,22 @@ async function tick() {
     const text = await run(name).catch((e) => `${head(name)}\n\nما قدرت أجهز التقرير اليوم: ${e.message}`);
     if (text && kwwatch.settings().telegram) await kwwatch.sendTelegram(text.length > 3900 ? text.slice(0, 3890) + "…" : text, name === "kw" ? "kw" : "us").catch(() => {});
   }
+  // any time in the session: the picks that confirm (every 5 minutes), and the big insider buys (every 30)
+  const n = parts(Date.now(), NY);
+  const nyMin = Number(n.hour) * 60 + Number(n.minute);
+  const work = !["Sat", "Sun"].includes(n.weekday);
+  const tg = (t) => (kwwatch.settings().telegram ? kwwatch.sendTelegram(t.length > 3900 ? t.slice(0, 3890) + "…" : t, "us").catch(() => {}) : null);
+  if (work && nyMin >= 9 * 60 + 35 && nyMin < 16 * 60 && Date.now() - (st.liveAt || 0) >= 5 * 60e3) {
+    st.liveAt = Date.now();
+    await live(tg).catch(() => {});
+  }
+  if (st.on.insiders && work && nyMin >= 8 * 60 && nyMin < 18 * 60 && Date.now() - (st.insAt || 0) >= 30 * 60e3) {
+    st.insAt = Date.now();
+    await liveInsiders(tg).catch(() => {});
+  }
   const old = new Date(Date.now() - 10 * 86400e3).toISOString().slice(0, 10);
   for (const k of Object.keys(st.sent)) if (k.split("|")[1] < old) delete st.sent[k];
+  for (const k of Object.keys(st.live || {})) if (k.split("|")[2] < old) delete st.live[k];
 }
 export function start() {
   clearInterval(timer);

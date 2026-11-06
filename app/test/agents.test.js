@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 process.env.QT_DATA_DIR ||= mkdtempSync(path.join(os.tmpdir(), "agents-"));
-const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText, followText, levelsOf, roleAr, activities, sectorAr, freshLevels } = await import("../lib/agents.js");
+const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText, followText, levelsOf, roleAr, activities, sectorAr, freshLevels, liveEvents, bigInsiderNew } = await import("../lib/agents.js");
 
 test("the risk manager: profit in dollars and dinars, the stop's result, and where to raise it", () => {
   const t = riskText([{ market: "us", code: "UBER", name: "UBER", mine: true, entry: 65.83, stop: 59.5, targets: [72, 75, 80, 88, 100], qty: 493, last: 69.46 }]);
@@ -195,4 +195,37 @@ test("levels the price has left are replaced by ones around today's price", () =
   assert.equal(k.lo, 74.33);
   // past the first target: replaced
   assert.equal(freshLevels({ lo: 108.78, hi: 112.89, stop: 102.6, targets: [119.07, 127.31, 135.54] }, 119.44, bars).fresh, true);
+});
+
+test("a pick that confirms in the session: a message the moment it does, once; the target and the stop too", () => {
+  const picks = [
+    { agent: "momentum", code: "AAA", day: "2026-11-06", price: 50, entry: 50, stop: 48, t1: 52 },
+    { agent: "tech", code: "CCC", day: "2026-11-06", price: 78, lo: 74.33, hi: 76, stop: 72.39, t1: 77.94 },
+    { agent: "tech", code: "EEE", day: "2026-11-06", price: 30, stop: 28, t1: 32 },
+  ];
+  const mem = {};
+  // over the entry but the buying is weak: nothing
+  assert.equal(liveEvents(picks, { quotes: { AAA: { price: 50.4 } }, buys: { AAA: 52 }, recent: { AAA: 70 } }, mem).length, 0);
+  const ev = liveEvents(picks, { quotes: { AAA: { price: 50.4, changePct: 2 }, CCC: { price: 75 }, EEE: { price: 27.9 } }, buys: { AAA: 66, CCC: 61 }, recent: { AAA: 71, CCC: 64 } }, mem, { AAA: "صناعة رقائق" });
+  assert.equal(ev.length, 3);
+  assert.match(ev[0], /^🚀 سعود · محلل الزخم\n⚡ فرصة الحين: AAA عدّى نقطة الدخول والشراء قوي \(اليوم 66%، وآخر 15 دقيقة 71%\)/);
+  assert.match(ev[0], /• AAA · صناعة رقائق\n   💵 السعر: 50\.4\$ \(\+2\.0%\)\n   🟢 الدخول فوق: 50\$\n   🎯 الأهداف: 52\$\n   🛑 وقف الخسارة: 48\$/);
+  assert.match(ev[1], /^📈 سالم · المحلل الفني\n⚡ فرصة الحين: CCC داخل منطقة الشراء/);
+  assert.match(ev[2], /🛑 EEE نزل تحت وقف الخسارة/);
+  // the same again: nothing; the first target later: once
+  assert.equal(liveEvents(picks, { quotes: { AAA: { price: 50.5 }, CCC: { price: 75 } }, buys: { AAA: 70, CCC: 70 }, recent: { AAA: 70, CCC: 70 } }, mem).length, 0);
+  const t = liveEvents(picks, { quotes: { AAA: { price: 52.1 } } }, mem);
+  assert.match(t[0], /🎯 AAA وصل الهدف الأول/);
+});
+
+test("a big purchase by a company's chief, each once", () => {
+  const rows = [
+    { code: "INTC", date: "2026-11-02", qty: 150000, value: 9.7e6, title: "CEO", who: "Tan" },
+    { code: "MGM", date: "2026-10-30", qty: 1.7e6, value: 51.7e6, title: "Dir", who: "Meister" },
+    { code: "SIRI", date: "2026-10-30", qty: 924281, value: 26.9e6, title: "10%", who: "Berkshire Hathaway Inc" },
+    { code: "SMALL", date: "2026-11-02", qty: 1000, value: 5e5, title: "CEO", who: "X" },
+  ];
+  const seen = {};
+  assert.deepEqual(bigInsiderNew(rows, seen).map((r) => r.code), ["INTC", "SIRI"]);
+  assert.deepEqual(bigInsiderNew(rows, seen), []);
 });
