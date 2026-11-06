@@ -350,6 +350,22 @@ export function introText() {
   ].join("\n\n");
 }
 
+// مريم starts the team's day: who sends what today, in Kuwait's time
+export function kickoffText(ms = Date.now()) {
+  const k = parts(ms, "Asia/Kuwait");
+  const fri = k.weekday === "Fri", sat = k.weekday === "Sat";
+  const list = [
+    !fri && !sat ? `${AGENTS.kw.icon} ${AGENTS.kw.name}: 10:30 الصبح` : "",
+    `${AGENTS.insiders.icon} ${AGENTS.insiders.name}: 4:30 العصر`,
+    `${AGENTS.tech.icon} ${AGENTS.tech.name}: 5:05 العصر`,
+    `${AGENTS.momentum.icon} ${AGENTS.momentum.name}: 5:15 العصر`,
+    `${AGENTS.risk.icon} ${AGENTS.risk.name}: 12:10 بالليل`,
+    `${AGENTS.earn.icon} ${AGENTS.earn.name}: 12:45 بالليل`,
+    fri ? `${AGENTS.hr.icon} ${AGENTS.hr.name}: تقييم الأسبوع 12:30 بالليل` : "",
+  ].filter(Boolean);
+  return [`${AGENTS.hr.icon} ${AGENTS.hr.name} · ${AGENTS.hr.ar}`, "🟢 بدينا الشغل من اليوم! الفريق كله على مكتبه، وأول التقارير توصلك اليوم:", list.join("\n"), "من اليوم كل توصية من سالم وسعود وخالد تنسجّل، وكل جمعة أقيّمهم بالأرقام. اللي ينجح يستمر، واللي ما ينجح أفصله.", "تبي أي واحد الحين؟ اكتب اسمه للبوت."].join("\n\n");
+}
+
 const myCodes = (market) => [...new Set([...(market === "us" ? usflow.follow() : []), ...trades.list(market).filter((t) => t.mine).map((t) => t.code)])];
 
 export async function run(name, ms = Date.now()) {
@@ -361,6 +377,7 @@ export async function run(name, ms = Date.now()) {
   if (name === "kw") return kw();
   if (name === "hr") return hr();
   if (name === "intro") return introText();
+  if (name === "kickoff") return kickoffText();
   throw new Error(`ما أعرف الوكيل ${name}`);
 }
 
