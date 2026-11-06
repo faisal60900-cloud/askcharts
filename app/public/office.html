@@ -4,76 +4,118 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>مكتب الفريق · AskCharts</title>
-<!-- مكتب الفريق: the agents of lib/agents.js on one page: who they are, when they write, their
-     record with you, their last report (open it), on or off, a report now, today's picks, and
-     مريم's decisions. Reads /api/agents every minute. -->
+<!-- مكتب الفريق: a floor plan of the agents' offices (lib/agents.js). Each agent has a room: a
+     nameplate, a desk, a screen with his last report, a lamp that's on while he works. Click a room
+     to open his file: his job, schedule, record, last report, buttons. The management wing has
+     مريم's office; the meeting room has the team's latest picks. Reads /api/agents every minute. -->
 <style>
   :root {
-    --bg: #0f1218; --panel: #171b23; --line: #262b36; --text: #e6e8ee; --muted: #8a93a6;
+    --bg: #0e1117; --panel: #161a22; --line: #272c37; --text: #e6e8ee; --muted: #8a93a6;
     --accent: #7c4dff; --good: #22ab94; --bad: #f23645; --warn: #f0b429;
+    --wall: #222837; --wall2: #1b2030; --floor1: #3a2c22; --floor2: #33271e; --desk: #6b4a32; --desk2: #5a3d29;
+    --glass: rgba(140, 180, 255, 0.10);
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg: #f5f6fa; --panel: #ffffff; --line: #e3e6ee; --text: #1b1f2a; --muted: #687187; }
+    :root { --bg: #eef0f5; --panel: #ffffff; --line: #dde1ea; --text: #1b1f2a; --muted: #687187;
+      --wall: #f3efe7; --wall2: #e9e3d7; --floor1: #c9a57c; --floor2: #bf9a70; --desk: #8a5f3e; --desk2: #744e33; --glass: rgba(80, 130, 220, 0.12); }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; }
-  header { display: flex; align-items: center; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+  header { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 3; }
   header h1 { margin: 0; font-size: 20px; }
-  header .sub { color: var(--muted); font-size: 13px; }
-  header .sp { flex: 1; }
-  main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 60px; }
-  .hr { background: linear-gradient(135deg, rgba(124, 77, 255, 0.16), rgba(41, 98, 255, 0.1)); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 18px; display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
-  .hr .face { font-size: 34px; }
-  .hr .txt { flex: 1; min-width: 240px; }
-  .hr b { font-size: 16px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-  .card.off { opacity: 0.55; }
-  .top { display: flex; align-items: center; gap: 10px; }
-  .icon { font-size: 28px; width: 44px; height: 44px; display: grid; place-items: center; background: var(--bg); border-radius: 12px; }
-  .name { font-weight: 700; font-size: 16px; }
-  .role { color: var(--muted); font-size: 13px; }
-  .job { font-size: 14px; }
-  .when { font-size: 13px; color: var(--muted); }
-  .rec { font-size: 13px; background: var(--bg); border-radius: 8px; padding: 6px 10px; }
-  .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--bg); color: var(--muted); }
-  .badge.on { color: var(--good); }
-  .badge.fired { color: var(--bad); }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  button { font: inherit; font-size: 13px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .sp { flex: 1; }
+  main { max-width: 1200px; margin: 0 auto; padding: 18px 16px 60px; }
+  .wing { margin-bottom: 26px; }
+  .wing h2 { font-size: 15px; margin: 0 0 10px; display: flex; gap: 8px; align-items: center; color: var(--muted); font-weight: 600; letter-spacing: 0.2px; }
+  .wing h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .floor { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+  .floor.big { grid-template-columns: 1.3fr 1fr; }
+  @media (max-width: 720px) { .floor.big { grid-template-columns: 1fr; } }
+
+  /* a room */
+  .room { position: relative; border-radius: 14px; overflow: hidden; border: 3px solid var(--line); cursor: pointer; height: 250px; background: var(--wall); transition: transform 0.15s, box-shadow 0.15s; text-align: center; }
+  .room:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); }
+  .room:focus-visible { outline: 3px solid var(--accent); }
+  .wall { position: absolute; inset: 0 0 42% 0; background: linear-gradient(var(--wall), var(--wall2)); }
+  .floorboards { position: absolute; inset: 58% 0 0 0; background: repeating-linear-gradient(90deg, var(--floor1) 0 38px, var(--floor2) 38px 40px); }
+  .plate { position: absolute; top: 10px; right: 50%; transform: translateX(50%); background: #c9a227; color: #1b1407; font-weight: 700; font-size: 13px; padding: 3px 12px; border-radius: 6px; box-shadow: 0 2px 0 #8a6d12; white-space: nowrap; z-index: 2; }
+  .plate small { font-weight: 600; opacity: 0.8; }
+  .window { position: absolute; top: 44px; left: 16px; width: 64px; height: 50px; border: 4px solid var(--line); border-radius: 4px; background: linear-gradient(160deg, #6fa8ff55, #ffd27a44); }
+  .window::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 47%, var(--line) 47% 53%, transparent 53%); }
+  .frame { position: absolute; top: 48px; right: 18px; font-size: 22px; background: var(--panel); border: 3px solid var(--desk2); border-radius: 4px; padding: 0 6px; }
+  .lamp { position: absolute; top: 0; left: 50%; width: 2px; height: 34px; background: var(--muted); }
+  .lamp::after { content: ""; position: absolute; top: 32px; left: -14px; width: 30px; height: 12px; border-radius: 15px 15px 2px 2px; background: #555c6b; }
+  .room.on .light { position: absolute; top: 40px; left: calc(50% - 90px); width: 180px; height: 210px; background: radial-gradient(ellipse at top, rgba(255, 214, 120, 0.28), transparent 70%); pointer-events: none; }
+  .room.on .lamp::after { background: #ffd36e; box-shadow: 0 4px 18px #ffd36e; }
+  .person { position: absolute; bottom: 72px; left: calc(50% + 52px); transform: translateX(-50%); font-size: 46px; line-height: 1; z-index: 1; }
+  .room.off .person, .room.fired .person { opacity: 0; }
+  .desk { position: absolute; bottom: 34px; left: 50%; transform: translateX(-50%); width: 72%; height: 46px; background: linear-gradient(var(--desk), var(--desk2)); border-radius: 6px 6px 3px 3px; z-index: 2; box-shadow: 0 6px 0 rgba(0, 0, 0, 0.25); }
+  .screen { position: absolute; bottom: 64px; left: calc(50% - 38px); transform: translateX(-50%); width: 112px; height: 52px; background: #0b0f16; border: 3px solid #2b3240; border-radius: 5px; z-index: 3; color: #39e29b; font: 600 10.5px/1.35 ui-monospace, Menlo, Consolas, monospace; padding: 4px 5px; overflow: hidden; direction: rtl; text-align: right; }
+  .screen::after { content: ""; position: absolute; bottom: -12px; left: 50%; width: 14px; height: 9px; transform: translateX(-50%); background: #2b3240; }
+  .room.off .screen, .room.fired .screen { color: #59606e; }
+  .plant { position: absolute; bottom: 26px; right: 10px; font-size: 28px; z-index: 3; }
+  .mug { position: absolute; bottom: 74px; left: calc(50% + 72px); font-size: 16px; z-index: 3; }
+  .status { position: absolute; bottom: 6px; right: 50%; transform: translateX(50%); font-size: 12px; font-weight: 600; padding: 1px 10px; border-radius: 99px; background: var(--panel); white-space: nowrap; z-index: 3; }
+  .status.on { color: var(--good); } .status.off { color: var(--muted); } .status.fired { color: var(--bad); }
+  .room.off .wall, .room.off .floorboards { filter: brightness(0.6); }
+  .tape { display: none; position: absolute; top: 46%; left: -10%; width: 120%; padding: 4px 0; transform: rotate(-12deg); background: repeating-linear-gradient(45deg, #f0b429 0 16px, #1b1f2a 16px 32px); color: #fff; font-weight: 800; z-index: 4; text-shadow: 0 1px 3px #000; }
+  .room.fired .tape { display: block; }
+  .room.fired .wall, .room.fired .floorboards { filter: grayscale(1) brightness(0.55); }
+
+  /* the manager's office is bigger, with a sofa */
+  .room.boss { height: 270px; border-color: #7c4dff66; }
+  .room.boss .desk { width: 60%; }
+  .sofa { position: absolute; bottom: 26px; left: 14px; font-size: 34px; z-index: 3; }
+  .board { position: absolute; top: 44px; right: 16px; background: #f7f7f2; color: #1b1f2a; border: 4px solid #9aa2b1; border-radius: 4px; padding: 4px 8px; font-size: 11px; line-height: 1.5; text-align: right; max-width: 170px; }
+
+  /* the meeting room */
+  .meeting { background: var(--panel); border: 3px solid var(--line); border-radius: 14px; padding: 14px; }
+  .meeting .tbl { display: flex; justify-content: center; gap: 6px; font-size: 26px; margin: 2px 0 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 7px 9px; border-bottom: 1px solid var(--line); text-align: right; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  bdi { direction: ltr; }
+  .empty { color: var(--muted); padding: 10px; text-align: center; }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 12px; }
+  .scroll { overflow-x: auto; }
+
+  /* his file */
+  dialog { border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--text); width: min(680px, calc(100vw - 32px)); max-height: 86vh; padding: 0; }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+  .file { padding: 18px 20px 20px; }
+  .file .hd { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+  .file .ic { font-size: 34px; }
+  .file h3 { margin: 0; font-size: 19px; }
+  .kv { font-size: 14px; margin: 6px 0; }
+  .kv b { color: var(--muted); font-weight: 600; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  button { font: inherit; font-size: 13px; padding: 7px 13px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button:disabled { opacity: 0.5; cursor: wait; }
-  details { border-top: 1px solid var(--line); padding-top: 8px; }
-  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
-  pre { white-space: pre-wrap; font: 13.5px/1.7 system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; margin: 8px 0 0; max-height: 420px; overflow: auto; }
-  h2 { font-size: 17px; margin: 26px 0 10px; }
-  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 14px; }
-  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: right; }
-  th { color: var(--muted); font-weight: 600; font-size: 13px; }
-  td bdi { direction: ltr; }
-  .empty { color: var(--muted); padding: 14px; }
-  .note { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
-  @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } header { padding: 14px 16px; } }
+  .x { margin-inline-start: auto; }
+  pre { white-space: pre-wrap; font: 13.5px/1.75 system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; margin: 0; background: var(--bg); border-radius: 10px; padding: 12px; max-height: 46vh; overflow: auto; }
+  .lbl { font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
 </style>
 </head>
 <body>
 <header>
-  <div style="font-size: 26px">👥</div>
+  <div style="font-size: 26px">🏢</div>
   <div>
     <h1>مكتب الفريق</h1>
-    <div class="sub">وكلاءك وتقاريرهم الخاصة · إضافة على إشارات البوت</div>
+    <div class="sub">مكاتب وكلاءك · اضغط على أي مكتب تفتح ملفه · إضافة على إشارات البوت</div>
   </div>
   <div class="sp"></div>
   <span class="sub" id="at"></span>
   <button id="refresh">تحديث</button>
 </header>
 <main>
-  <div class="hr" id="hr"></div>
-  <div class="grid" id="team"></div>
-  <h2>📋 توصيات الفريق الأخيرة</h2>
-  <div id="picks"></div>
+  <section class="wing"><h2>🏛️ الإدارة</h2><div class="floor big" id="admin"></div></section>
+  <section class="wing"><h2>🗽 قسم السوق الأمريكي</h2><div class="floor" id="us"></div></section>
+  <section class="wing"><h2>🏙️ قسم السوق الكويتي</h2><div class="floor" id="kw"></div></section>
   <p class="note">الأهداف والوقف من مسح السوق، والتوصيات تحليل، مو ضمان. مريم تقيّم الفريق كل جمعة بالأرقام، واللي ما ينجح تفصله. الأوقات بتوقيت الكويت.</p>
 </main>
+<dialog id="file"><div class="file" id="fileBody"></div></dialog>
 <script type="module">
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -83,44 +125,88 @@ const ago = (t) => {
   return m < 1 ? "الحين" : m < 60 ? `قبل ${m} دقيقة` : m < 1440 ? `قبل ${Math.round(m / 60)} ساعة` : new Date(t).toLocaleDateString("ar-KW", { weekday: "long", day: "numeric", month: "long" });
 };
 const post = (url, body) => fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-qt": "1" }, body: body ? JSON.stringify(body) : undefined }).then((r) => r.json());
-let data = null;
+const US = ["tech", "momentum", "insiders", "earn", "risk"];
+const DECOR = { tech: "📊", momentum: "🏁", insiders: "🔎", earn: "🗞️", risk: "🧯", kw: "🕌", hr: "🏆" };
+let data = null, openK = null;
+
+const state = (k) => (data.fired?.[k] ? "fired" : data.on[k] !== false ? "on" : "off");
+const statusText = { on: "● على مكتبه", off: "⏸️ موقوف · الضوء طافي", fired: "🚪 مفصول" };
+
+function screenText(k) {
+  const last = data.last[k];
+  if (state(k) === "fired") return "— الجهاز مقفل —";
+  if (state(k) === "off") return "💤 في إجازة";
+  if (last) return `آخر تقرير\n${ago(last.at)}\n${esc(last.text.split("\n").find((l, i) => i > 1 && l.trim()) || "").slice(0, 40)}`;
+  return `ينتظر موعده\n${esc((data.agents[k].when || "").split("،")[0]).slice(0, 34)}`;
+}
+
+function room(k) {
+  const a = data.agents[k], s = state(k);
+  return `<div class="room ${s}" tabindex="0" data-open="${k}" title="افتح ملف ${esc(a.name)}">
+    <div class="wall"></div><div class="floorboards"></div><div class="light"></div><div class="lamp"></div>
+    <div class="plate">مكتب ${esc(a.name)} <small>· ${esc(a.ar)}</small></div>
+    <div class="window"></div><div class="frame">${DECOR[k] || "🖼️"}</div>
+    <div class="person">${a.icon}</div>
+    <div class="screen">${screenText(k).replace(/\n/g, "<br>")}</div>
+    <div class="desk"></div><div class="plant">🌿</div>
+    <div class="tape">مفصول</div>
+    <div class="status ${s}">${statusText[s]}</div>
+  </div>`;
+}
+
+function bossRoom() {
+  const a = data.agents.hr;
+  const fired = Object.keys(data.fired || {});
+  const recs = Object.entries(data.record || {}).slice(0, 4).map(([k, r]) => `${data.agents[k]?.name || k}: ${r}`);
+  const board = fired.length ? `🚪 مفصولين: ${fired.map((k) => data.agents[k].name).join("، ")}` : recs.length ? recs.join("<br>") : "✅ الفريق كامل<br>أول تقييم يوم الجمعة";
+  return `<div class="room boss on" tabindex="0" data-open="hr" title="افتح ملف ${esc(a.name)}">
+    <div class="wall"></div><div class="floorboards"></div><div class="light"></div><div class="lamp"></div>
+    <div class="plate">مكتب المديرة · ${esc(a.name)} <small>· ${esc(a.ar)}</small></div>
+    <div class="window"></div><div class="board">${esc(board).replace(/&lt;br&gt;/g, "<br>")}</div>
+    <div class="person">${a.icon}</div>
+    <div class="screen">${screenText("hr").replace(/\n/g, "<br>")}</div>
+    <div class="desk"></div><div class="sofa">🛋️</div><div class="plant">🌿</div>
+    <div class="status on">● على مكتبها</div>
+  </div>`;
+}
+
+function meeting() {
+  const picks = data.picks || [];
+  const rows = picks.slice(0, 12).map((p) => {
+    const a = data.agents[p.agent] || {};
+    return `<tr><td>${esc(p.day)}</td><td>${a.icon || ""} ${esc(a.name || p.agent)}</td><td><b><bdi>${esc(p.code)}</bdi></b></td><td>${esc(data.ar[p.code] || "")}</td><td><bdi>${p.entry ? `${p.entry}$` : p.lo ? `${p.lo}–${p.hi}$` : p.price ? `${p.price}$` : "—"}</bdi></td><td><bdi>${p.t1 ? `${p.t1}$` : "—"}</bdi></td><td><bdi>${p.stop ? `${p.stop}$` : "—"}</bdi></td></tr>`;
+  });
+  return `<div class="meeting"><div style="font-weight: 700; text-align: center">🪑 غرفة الاجتماعات · توصيات الفريق الأخيرة</div>
+    <div class="tbl">🪑🟫🟫🟫🪑</div>
+    ${rows.length ? `<div class="scroll"><table><thead><tr><th>اليوم</th><th>مين</th><th>السهم</th><th>النشاط</th><th>الدخول</th><th>الهدف الأول</th><th>الوقف</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>`
+      : `<div class="empty">للحين ما في توصيات. أولها من خالد (4:30)، وسالم (5:05)، وسعود (5:15) العصر.</div>`}</div>`;
+}
 
 function render() {
-  const d = data;
-  const hr = d.agents.hr;
-  const fired = Object.keys(d.fired || {});
-  $("#hr").innerHTML = `<div class="face">${hr.icon}</div><div class="txt"><b>${esc(hr.name)} · ${esc(hr.ar)}</b><div>${esc(hr.job)} · ${esc(hr.when)}</div>
-    ${fired.length ? `<div style="color: var(--bad); margin-top: 6px">🚪 مفصولين: ${fired.map((k) => `${esc(d.agents[k].name)} (${esc(d.agents[k].ar)})`).join("، ")}</div>` : `<div style="color: var(--good); margin-top: 6px">✅ الفريق كامل، وما في أحد مفصول</div>`}
-    ${d.last.hr ? `<details><summary>آخر رسالة من ${esc(hr.name)} · ${ago(d.last.hr.at)}</summary><pre>${esc(d.last.hr.text)}</pre></details>` : ""}</div>
-    <div class="row"><button data-run="hr">📊 تقييم الحين</button></div><pre data-out="hr" hidden style="flex-basis: 100%"></pre>`;
-  $("#team").innerHTML = Object.entries(d.agents)
-    .filter(([k]) => k !== "hr")
-    .map(([k, a]) => {
-      const on = d.on[k] !== false, isFired = !!d.fired?.[k];
-      const last = d.last[k];
-      return `<div class="card ${on ? "" : "off"}">
-        <div class="top"><div class="icon">${a.icon}</div><div><div class="name">${esc(a.name)}</div><div class="role">${esc(a.ar)}</div></div><div style="flex: 1"></div>
-          <span class="badge ${isFired ? "fired" : on ? "on" : ""}">${isFired ? "🚪 مفصول" : on ? "● على مكتبه" : "⏸️ موقوف"}</span></div>
-        <div class="job">${esc(a.job)}</div>
-        <div class="when">⏰ ${esc(a.when)}</div>
-        ${d.record[k] ? `<div class="rec">📋 سجله معك: ${esc(d.record[k])}</div>` : `<div class="rec" style="color: var(--muted)">📋 سجله يبدأ مع أول تقييم يوم الجمعة</div>`}
-        <div class="row">
-          <button class="primary" data-run="${k}">تقريره الحين</button>
-          <button data-send="${k}">أرسله لتليجرام</button>
-          ${isFired ? `<button data-rehire="${k}">رجّعه</button>` : `<button data-toggle="${k}">${on ? "وقّفه" : "شغّله"}</button>`}
-        </div>
-        ${last ? `<details><summary>آخر تقرير · ${ago(last.at)}</summary><pre>${esc(last.text)}</pre></details>` : `<div class="when">ما أرسل تقرير للحين</div>`}
-        <pre data-out="${k}" hidden></pre>
-      </div>`;
-    })
-    .join("");
-  const picks = d.picks || [];
-  $("#picks").innerHTML = picks.length
-    ? `<table><thead><tr><th>اليوم</th><th>مين</th><th>السهم</th><th>النشاط</th><th>الدخول</th><th>الهدف الأول</th><th>الوقف</th></tr></thead><tbody>
-      ${picks.map((p) => { const a = d.agents[p.agent] || {}; return `<tr><td>${esc(p.day)}</td><td>${a.icon || ""} ${esc(a.name || p.agent)}</td><td><b><bdi>${esc(p.code)}</bdi></b></td><td>${esc(d.ar[p.code] || "")}</td><td><bdi>${p.entry ? `${p.entry}$` : p.lo ? `${p.lo}–${p.hi}$` : p.price ? `${p.price}$` : "—"}</bdi></td><td><bdi>${p.t1 ? `${p.t1}$` : "—"}</bdi></td><td><bdi>${p.stop ? `${p.stop}$` : "—"}</bdi></td></tr>`; }).join("")}
-      </tbody></table>`
-    : `<div class="empty">للحين ما في توصيات. أول توصيات اليوم من خالد (4:30)، وسالم (5:05)، وسعود (5:15) العصر.</div>`;
+  $("#admin").innerHTML = bossRoom() + meeting();
+  $("#us").innerHTML = US.filter((k) => data.agents[k]).map(room).join("");
+  $("#kw").innerHTML = data.agents.kw ? room("kw") : "";
   $("#at").textContent = `آخر تحديث ${new Date().toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit" })}`;
+  if (openK && $("#file").open) fileOf(openK, true);
+}
+
+function fileOf(k, keepOut) {
+  openK = k;
+  const a = data.agents[k], s = k === "hr" ? "on" : state(k), last = data.last[k];
+  const out = keepOut ? $("#out")?.textContent : "";
+  const btns = k === "hr"
+    ? `<button class="primary" data-run="hr">📊 تقييم الحين</button><button data-send="hr">أرسل التقييم لتليجرام</button>`
+    : `<button class="primary" data-run="${k}">تقريره الحين</button><button data-send="${k}">أرسله لتليجرام</button>
+       ${s === "fired" ? `<button data-rehire="${k}">رجّعه للشغل</button>` : `<button data-toggle="${k}">${s === "on" ? "وقّفه (إجازة)" : "رجّعه لمكتبه"}</button>`}`;
+  $("#fileBody").innerHTML = `<div class="hd"><div class="ic">${a.icon}</div><div><h3>ملف ${esc(a.name)}</h3><div class="sub">${esc(a.ar)} · ${k === "hr" ? "على مكتبها" : statusText[s]}</div></div><button class="x" data-close>✕</button></div>
+    <div class="kv"><b>شغله:</b> ${esc(a.job)}</div>
+    <div class="kv"><b>مواعيده:</b> ⏰ ${esc(a.when)}</div>
+    ${k !== "hr" ? `<div class="kv"><b>سجله معك:</b> ${esc(data.record[k] || "يبدأ مع أول تقييم يوم الجمعة")}</div>` : ""}
+    <div class="row">${btns}</div>
+    <pre id="out" ${out ? "" : "hidden"}>${esc(out || "")}</pre>
+    <div class="lbl">📄 آخر تقرير ${last ? `· ${ago(last.at)}` : ""}</div>
+    ${last ? `<pre>${esc(last.text)}</pre>` : `<div class="empty">ما أرسل تقرير للحين.</div>`}`;
+  if (!$("#file").open) $("#file").showModal();
 }
 
 async function load() {
@@ -128,26 +214,35 @@ async function load() {
   render();
 }
 
+document.addEventListener("keydown", (e) => {
+  const r = e.target.closest?.("[data-open]");
+  if (r && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); fileOf(r.dataset.open); }
+});
+$("#file").addEventListener("click", (e) => { if (e.target === $("#file")) $("#file").close(); });
 document.addEventListener("click", async (e) => {
+  const r = e.target.closest("[data-open]");
+  if (r) return fileOf(r.dataset.open);
   const b = e.target.closest("button");
   if (!b) return;
   if (b.id === "refresh") return load();
+  if (b.hasAttribute("data-close")) return $("#file").close();
   const k = b.dataset.run || b.dataset.send || b.dataset.toggle || b.dataset.rehire;
   if (!k) return;
   b.disabled = true;
+  const old = b.textContent;
   try {
     if (b.dataset.toggle) await post("/api/agents", { on: { [k]: !(data.on[k] !== false) } });
     else if (b.dataset.rehire) await post(`/api/agents/rehire?name=${k}`);
     else {
-      const old = b.textContent;
       b.textContent = "يجهّز…";
-      const r = await post(`/api/agents/run?name=${k}${b.dataset.send ? "&send=1" : ""}`);
-      b.textContent = old;
-      const out = document.querySelector(`[data-out="${k}"]`);
-      if (out) { out.hidden = false; out.textContent = (b.dataset.send ? "✅ انرسل لتليجرام\n\n" : "") + (r.text || "ما في شي للحين."); }
+      const res = await post(`/api/agents/run?name=${k}${b.dataset.send ? "&send=1" : ""}`);
+      const out = $("#out");
+      out.hidden = false;
+      out.textContent = (b.dataset.send ? "✅ انرسل لتليجرام\n\n" : "") + (res.text || "ما في شي للحين.");
     }
-    if (b.dataset.toggle || b.dataset.rehire) await load();
+    await load();
   } finally {
+    b.textContent = old;
     b.disabled = false;
   }
 });
