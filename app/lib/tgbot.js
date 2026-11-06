@@ -206,9 +206,9 @@ export async function answer(text, chatId = "me") {
   // the team of agents: "الفريق", or one report on demand
   if (/^\/?(?:الفريق|الوكلاء|team)$/i.test(t)) {
     const s = agents.settings();
-    return `👥 فريقك (يرسلون تقارير خاصة يوميًا، إضافة على التنبيهات):\n${Object.entries(s.agents).map(([k, a]) => `${s.on[k] ? "✅" : "⏸️"} ${a.icon} ${a.ar}: ${a.when}`).join("\n")}\n\nتبي تقرير الحين؟ اكتب: المحلل الفني · متتبع الكبار · محلل النتائج · مدير المخاطر · محلل الكويت`;
+    return `👥 فريقك (يرسلون تقارير خاصة، إضافة على التنبيهات):\n${Object.entries(s.agents).map(([k, a]) => `${s.on[k] ? "✅" : "⏸️"} ${a.icon} ${a.name} · ${a.ar}: ${a.when}`).join("\n")}\n\nتبي تقرير الحين؟ اكتب اسمه: سالم · خالد · نورة · فهد · عبدالله · مريم`;
   }
-  const ag = { "المحلل الفني": "tech", "متتبع الكبار": "insiders", "الكبار": "insiders", "محلل النتائج": "earn", "مدير المخاطر": "risk", "المخاطر": "risk", "محلل الكويت": "kw" }[t.replace(/^\//, "").trim()];
+  const ag = { "المحلل الفني": "tech", "سالم": "tech", "متتبع الكبار": "insiders", "الكبار": "insiders", "خالد": "insiders", "محلل النتائج": "earn", "محللة النتائج": "earn", "نورة": "earn", "مدير المخاطر": "risk", "المخاطر": "risk", "فهد": "risk", "محلل الكويت": "kw", "عبدالله": "kw", "مريم": "hr", "الموارد البشرية": "hr", "تقييم الفريق": "hr", "اعلان التوظيف": "intro", "إعلان التوظيف": "intro" }[t.replace(/^\//, "").trim()];
   if (ag) return agents.run(ag).catch((e) => `ما قدرت أجهز التقرير: ${e.message}`);
   // follow a US stock closely: its news, 2% moves, unusual money, and extended-hours moves
   const fol = t.match(/^\/?(تابع|follow|الغ\s*(?:متابعة|تابع)|وقف\s*متابعة|unfollow)\s+([A-Za-z.]{1,6})$/i);

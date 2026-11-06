@@ -6,11 +6,11 @@ import os from "node:os";
 import path from "node:path";
 
 process.env.QT_DATA_DIR ||= mkdtempSync(path.join(os.tmpdir(), "agents-"));
-const { riskText, parseOpenInsider, insidersText, due } = await import("../lib/agents.js");
+const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText } = await import("../lib/agents.js");
 
 test("the risk manager: profit in dollars and dinars, the stop's result, and where to raise it", () => {
   const t = riskText([{ market: "us", code: "UBER", name: "UBER", mine: true, entry: 65.83, stop: 59.5, targets: [72, 75, 80, 88, 100], qty: 493, last: 69.46 }]);
-  assert.match(t, /🛡️ مدير المخاطر · تقريرك الخاص/);
+  assert.match(t, /^🛡️ فهد · مدير المخاطر\nتقريرك الخاص/);
   assert.match(t, /🟢 UBER: 69\.46\$ · \+5\.5%/);
   assert.match(t, /الربح: \+1,790\$ ≈ \+549 د\.ك/);
   assert.match(t, /🛑 الوقف 59\.5\$ \(-14\.3%\): لو ضرب، النتيجة -957 د\.ك/);
@@ -69,4 +69,38 @@ test("the clock: each agent once a day at its time, US weekdays and Kuwaiti work
   assert.deepEqual(due(Date.UTC(2026, 10, 8, 7, 35), {}), [["kw", "2026-11-08"]]);
   // Friday 10:35 in Kuwait: no Kuwaiti report
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 7, 35), {}), []);
+});
+
+test("the HR review: each analyst's picks against the prices after them", () => {
+  const bar = (d, high, low, close) => ({ time: Date.parse(`${d}T20:00:00Z`) / 1000, high, low, close });
+  const picks = [
+    { agent: "tech", code: "AAA", day: "2026-11-02", price: 100, stop: 96, t1: 104 },
+    { agent: "tech", code: "BBB", day: "2026-11-02", price: 50, stop: 48, t1: 52 },
+    { agent: "tech", code: "CCC", day: "2026-11-05", price: 20, stop: 19, t1: 21 },
+    { agent: "insiders", code: "SIRI", day: "2026-11-02", price: 29 },
+  ];
+  const bars = {
+    AAA: [bar("2026-11-02", 101, 99, 100), bar("2026-11-03", 105, 100, 104.5), bar("2026-11-04", 106, 103, 105)],
+    BBB: [bar("2026-11-03", 50.5, 47.5, 48)],
+    CCC: [bar("2026-11-06", 20.5, 19.5, 20.2)],
+    SIRI: [bar("2026-11-03", 30, 29, 30.45)],
+  };
+  const r = review(picks, bars);
+  assert.deepEqual(r.tech.map((x) => [x.code, x.outcome, +x.change.toFixed(1)]), [["AAA", "target", 5], ["BBB", "stop", -4], ["CCC", "open", 1]]);
+  const t = hrText(r);
+  assert.match(t, /^👩‍💼 مريم · مديرة الموارد البشرية/);
+  assert.match(t, /📈 سالم \(المحلل الفني\): 3 سهم\n   🎯 حقق الهدف الأول: 1 · 🛑 ضرب الوقف: 1 · ⏳ للحين: 1 · نسبة النجاح 50%/);
+  assert.match(t, /🕵️ خالد \(متتبع الكبار\): 1 سهم[^\n]*\n   متوسط حركتها من سعر شراء المدير: \+5\.0%/);
+  assert.match(hrText({ tech: [], insiders: [] }), /ما في توصيات كافية للتقييم/);
+});
+
+test("the hiring announcement names the team", () => {
+  const t = introText();
+  for (const n of ["مريم", "سالم", "خالد", "نورة", "فهد", "عبدالله"]) assert.match(t, new RegExp(n));
+  assert.match(t, /إضافة على تنبيهاتك/);
+});
+
+test("the HR review is due Friday after the US close", () => {
+  assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 35), {}).map((x) => x[0]), ["hr"]);
+  assert.deepEqual(due(Date.UTC(2026, 10, 5, 21, 35), {}).map((x) => x[0]), []);
 });
