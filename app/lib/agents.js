@@ -257,7 +257,7 @@ async function tech() {
     if (p?.text) {
       const num = (re) => Number((p.text.match(re) || [])[1]?.replace(/,/g, "")) || null;
       const zone = p.text.match(/منطقة: ([\d.,]+)\$ – ([\d.,]+)\$/);
-      pick("tech", n.code, { price: num(/السعر الآن: ([\d.,]+)\$/), stop: num(/وقف الخسارة الأولي: ([\d.,]+)\$/), t1: num(/1️⃣ ([\d.,]+)\$/), lo: zone ? Number(zone[1].replace(/,/g, "")) : null, hi: zone ? Number(zone[2].replace(/,/g, "")) : null });
+      pick("tech", n.code, { price: num(/السعر الآن: ([\d.,]+)\$/), stop: num(/وقف الخسارة الأولي: ([\d.,]+)\$/), t1: num(/1️⃣ ([\d.,]+)\$/), targets: levelsOf(p.text).targets, lo: zone ? Number(zone[1].replace(/,/g, "")) : null, hi: zone ? Number(zone[2].replace(/,/g, "")) : null });
     }
     if (p?.text) reads.push({ code: n.code, why: n.why, full: p.text, text: p.text.split("\n").filter((l) => /السعر الآن|منطقة|وقف الخسارة|1️⃣|2️⃣|3️⃣|مقاومات/.test(l)).join("\n"), record: p.text.split("\n").find((l) => /السجل التاريخي/.test(l)) });
   }
@@ -373,7 +373,7 @@ async function momentum() {
     }),
   );
   const top = found.sort((a, b) => b.score - a.score).slice(0, 5);
-  for (const r of top) pick("momentum", r.code, { price: r.entry, stop: r.stop, t1: r.targets[0], entry: r.entry });
+  for (const r of top) pick("momentum", r.code, { price: r.entry, stop: r.stop, t1: r.targets[0], targets: r.targets.slice(0, 3), entry: r.entry });
   return momentumText(top, await activities(top.map((r) => r.code)));
 }
 
@@ -434,11 +434,14 @@ async function follow(phase, ms = Date.now()) {
   return followText(picks, quotes, phase, buys);
 }
 
-// ---------- ⚡ فرصة الحين: during the session, the moment a pick confirms ----------
-// An analyst writes the moment one of today's picks confirms: over the entry (or inside the zone)
-// with the day's buying at 60% or more and the last 15 minutes buying too; and once more when it
-// reaches its first target or breaks its stop. Each once (mem).
-export function liveEvents(picks, { quotes = {}, buys = {}, recent = {} } = {}, mem = {}, acts = {}) {
+// ---------- ⚡ فرصة الحين، 🎯 الأهداف و 🛑 الوقف ----------
+// During the session an analyst writes: the moment one of today's picks confirms (over the entry,
+// or inside the zone, with the day's buying at 60% or more and the last 15 minutes buying too);
+// and for each pick of the last 5 business days, every target it reaches (1, 2, 3), the stop
+// before any target, and after the first target a fall back to the entry (the raised stop).
+// Each once (mem). today: New York's date, for "today's picks only" on the opportunity.
+const ORD = ["الأول", "الثاني", "الثالث"];
+export function liveEvents(picks, { quotes = {}, buys = {}, recent = {} } = {}, mem = {}, acts = {}, { today } = {}) {
   const ev = [];
   for (const p of picks) {
     const q = quotes[p.code];
@@ -446,24 +449,62 @@ export function liveEvents(picks, { quotes = {}, buys = {}, recent = {} } = {}, 
     const px = q.price, a = AGENTS[p.agent];
     const key = (k) => `${p.agent}|${p.code}|${p.day}|${k}`;
     const once = (k) => (mem[key(k)] ? false : (mem[key(k)] = 1));
-    const block = (note) => `${a.icon} ${a.name} · ${a.ar}\n${note}\n\n${stockBlock(p.code, { act: acts[p.code], price: px, chg: q.changePct, entry: p.entry, lo: p.lo, hi: p.hi, stop: p.stop, targets: [p.t1].filter(Boolean) })}`;
-    if (p.t1 && px >= p.t1 && once("t1")) ev.push(block(`🎯 ${p.code} وصل الهدف الأول من توصية الصبح. اللي دخل يرفع الوقف لسعر دخوله.`));
-    else if (p.stop && px <= p.stop && once("stop")) ev.push(block(`🛑 ${p.code} نزل تحت وقف الخسارة. توصية اليوم انتهت.`));
-    else {
-      const inEntry = p.entry ? px >= p.entry && px < (p.t1 || Infinity) : p.lo && p.hi ? px >= p.lo && px <= p.hi : false;
-      if (inEntry && buys[p.code] >= 60 && recent[p.code] >= 60 && once("go")) ev.push(block(`⚡ فرصة الحين: ${p.code} ${p.entry ? "عدّى نقطة الدخول" : "داخل منطقة الشراء"} والشراء قوي (اليوم ${buys[p.code]}%، وآخر 15 دقيقة ${recent[p.code]}%).\nتأكيد، مو ضمان. حط الوقف من البداية.`));
+    const entry = p.entry || (p.lo && p.hi ? (p.lo + p.hi) / 2 : p.price);
+    // older picks kept the first target only: the scan's targets are evenly spaced by the risk
+    const R = p.t1 && entry > 0 && p.stop ? p.t1 - entry : 0;
+    const T = (p.targets?.length ? p.targets : R > 0 ? [p.t1, p.t1 + R, p.t1 + 2 * R].map((v) => Math.round(v * 100) / 100) : [p.t1]).filter((v) => v > 0);
+    const when = !today || p.day === today ? "من توصية اليوم" : `من توصية ${p.day}`;
+    const gain = entry > 0 ? ` (${px >= entry ? "+" : ""}${n2(((px - entry) / entry) * 100, 1)}% من الدخول ${n2(entry)}$)` : "";
+    const block = (note) => `${a.icon} ${a.name} · ${a.ar}\n${note}\n\n${stockBlock(p.code, { act: acts[p.code], price: px, chg: q.changePct, entry: p.entry, lo: p.lo, hi: p.hi, stop: p.stop, targets: T })}`;
+    const reached = T.reduce((n, t, i) => (px >= t ? i + 1 : n), 0);
+    const hitBefore = T.some((_, i) => mem[key(`t${i + 1}`)]);
+    if (reached) {
+      // the highest target reached, once; the lower ones count as reached with it
+      const fresh = !mem[key(`t${reached}`)];
+      for (let i = 1; i <= reached; i++) mem[key(`t${i}`)] = 1;
+      if (fresh) {
+        const all = reached === T.length && T.length > 1;
+        const next = all || !T[reached] ? "" : `\nالهدف الجاي: ${n2(T[reached])}$.`;
+        const tip = reached === 1 ? " اللي دخل يرفع الوقف لسعر دخوله." : ` اللي دخل يرفع الوقف للهدف ${ORD[reached - 2]} (${n2(T[reached - 2])}$).`;
+        ev.push(block(`🎯 ${p.code} ${all ? `حقق كل الأهداف 🎉 (${T.length})` : `وصل الهدف ${ORD[reached - 1]}`} ${when}${gain}.${all ? "" : tip}${next}`));
+      }
+      continue;
     }
+    if (hitBefore) {
+      // after a target: back at the entry, where the raised stop is
+      if (entry > 0 && px <= entry && once("back")) ev.push(block(`↩️ ${p.code} رجع لسعر الدخول بعد ما حقق الهدف الأول ${when}. اللي رفع وقفه للدخول طلع بدون خسارة.`));
+      continue;
+    }
+    if (p.stop && px <= p.stop) {
+      if (once("stop")) ev.push(block(`🛑 ${p.code} نزل تحت وقف الخسارة ${when}${gain}. التوصية انتهت.`));
+      continue;
+    }
+    if (today && p.day !== today) continue; // the opportunity: today's picks only
+    const inEntry = p.entry ? px >= p.entry && px < (T[0] || Infinity) : p.lo && p.hi ? px >= p.lo && px <= p.hi : false;
+    if (inEntry && buys[p.code] >= 60 && recent[p.code] >= 60 && once("go")) ev.push(block(`⚡ فرصة الحين: ${p.code} ${p.entry ? "عدّى نقطة الدخول" : "داخل منطقة الشراء"} والشراء قوي (اليوم ${buys[p.code]}%، وآخر 15 دقيقة ${recent[p.code]}%).\nتأكيد، مو ضمان. حط الوقف من البداية.`));
   }
   return ev;
 }
 
+// the picks still followed: tech and momentum, from the last 5 business days, still not done
+export function followedPicks(picks, today, on = {}) {
+  const d = new Date(`${today}T12:00:00Z`);
+  let n = 0;
+  while (n < 4) {
+    d.setUTCDate(d.getUTCDate() - 1);
+    if (![0, 6].includes(d.getUTCDay())) n++;
+  }
+  const from = d.toISOString().slice(0, 10);
+  return picks.filter((p) => (p.agent === "tech" || p.agent === "momentum") && on[p.agent] !== false && p.day >= from && p.day <= today);
+}
+
 async function live(send, ms = Date.now()) {
   const today = nyDates(ms).today;
-  const picks = st.picks.filter((p) => p.day === today && (p.agent === "tech" || p.agent === "momentum") && st.on[p.agent]);
+  const picks = followedPicks(st.picks, today, st.on);
   if (!picks.length) return 0;
   const codes = [...new Set(picks.map((p) => p.code))];
   st.live ||= {};
-  const ev = liveEvents(picks, await liveState(codes, ms), st.live, st.ar || {});
+  const ev = liveEvents(picks, await liveState(codes, ms), st.live, st.ar || {}, { today });
   save();
   for (const t of ev) {
     keep(t.startsWith("🚀") ? "momentum" : "tech", t);

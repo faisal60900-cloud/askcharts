@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 process.env.QT_DATA_DIR ||= mkdtempSync(path.join(os.tmpdir(), "agents-"));
-const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText, followText, levelsOf, roleAr, activities, sectorAr, freshLevels, liveEvents, bigInsiderNew } = await import("../lib/agents.js");
+const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText, followText, levelsOf, roleAr, activities, sectorAr, freshLevels, liveEvents, bigInsiderNew, followedPicks } = await import("../lib/agents.js");
 
 test("the risk manager: profit in dollars and dinars, the stop's result, and where to raise it", () => {
   const t = riskText([{ market: "us", code: "UBER", name: "UBER", mine: true, entry: 65.83, stop: 59.5, targets: [72, 75, 80, 88, 100], qty: 493, last: 69.46 }]);
@@ -209,13 +209,15 @@ test("a pick that confirms in the session: a message the moment it does, once; t
   const ev = liveEvents(picks, { quotes: { AAA: { price: 50.4, changePct: 2 }, CCC: { price: 75 }, EEE: { price: 27.9 } }, buys: { AAA: 66, CCC: 61 }, recent: { AAA: 71, CCC: 64 } }, mem, { AAA: "صناعة رقائق" });
   assert.equal(ev.length, 3);
   assert.match(ev[0], /^🚀 سعود · محلل الزخم\n⚡ فرصة الحين: AAA عدّى نقطة الدخول والشراء قوي \(اليوم 66%، وآخر 15 دقيقة 71%\)/);
-  assert.match(ev[0], /• AAA · صناعة رقائق\n   💵 السعر: 50\.4\$ \(\+2\.0%\)\n   🟢 الدخول فوق: 50\$\n   🎯 الأهداف: 52\$\n   🛑 وقف الخسارة: 48\$/);
+  assert.match(ev[0], /• AAA · صناعة رقائق\n   💵 السعر: 50\.4\$ \(\+2\.0%\)\n   🟢 الدخول فوق: 50\$\n   🎯 الأهداف: 52\$ · 54\$ · 56\$\n   🛑 وقف الخسارة: 48\$/);
   assert.match(ev[1], /^📈 سالم · المحلل الفني\n⚡ فرصة الحين: CCC داخل منطقة الشراء/);
   assert.match(ev[2], /🛑 EEE نزل تحت وقف الخسارة/);
   // the same again: nothing; the first target later: once
   assert.equal(liveEvents(picks, { quotes: { AAA: { price: 50.5 }, CCC: { price: 75 } }, buys: { AAA: 70, CCC: 70 }, recent: { AAA: 70, CCC: 70 } }, mem).length, 0);
   const t = liveEvents(picks, { quotes: { AAA: { price: 52.1 } } }, mem);
-  assert.match(t[0], /🎯 AAA وصل الهدف الأول/);
+  assert.match(t[0], /🎯 AAA وصل الهدف الأول من توصية اليوم[^\n]*\nالهدف الجاي: 54\$\./);
+  // older picks with the first target only: the next ones from the risk distance (52 − 50 = 2)
+  assert.match(t[0], /🎯 الأهداف: 52\$ · 54\$ · 56\$/);
 });
 
 test("a big purchase by a company's chief, each once", () => {
@@ -228,4 +230,38 @@ test("a big purchase by a company's chief, each once", () => {
   const seen = {};
   assert.deepEqual(bigInsiderNew(rows, seen).map((r) => r.code), ["INTC", "SIRI"]);
   assert.deepEqual(bigInsiderNew(rows, seen), []);
+});
+
+test("every target of a pick, each once, the stop before any, and back to the entry after one", () => {
+  const picks = [{ agent: "momentum", code: "AAA", day: "2026-11-05", price: 50, entry: 50, stop: 48, t1: 52, targets: [52, 54, 56] }];
+  const mem = {};
+  const at = (price) => liveEvents(picks, { quotes: { AAA: { price } } }, mem, {}, { today: "2026-11-09" });
+  // an older pick never gets the opportunity message
+  assert.equal(liveEvents(picks, { quotes: { AAA: { price: 50.5 } }, buys: { AAA: 80 }, recent: { AAA: 80 } }, mem, {}, { today: "2026-11-09" }).length, 0);
+  let e = at(54.2);
+  assert.equal(e.length, 1);
+  assert.match(e[0], /🎯 AAA وصل الهدف الثاني من توصية 2026-11-05 \(\+8\.4% من الدخول 50\$\)\. اللي دخل يرفع الوقف للهدف الأول \(52\$\)\.\nالهدف الجاي: 56\$\./);
+  assert.match(e[0], /🎯 الأهداف: 52\$ · 54\$ · 56\$/);
+  assert.equal(at(53).length, 0); // the first target again: already counted
+  assert.match(at(49.9)[0], /↩️ AAA رجع لسعر الدخول بعد ما حقق الهدف الأول/);
+  assert.equal(at(47).length, 0); // no stop message after a target
+  assert.match(at(56.3)[0], /🎯 AAA حقق كل الأهداف 🎉 \(3\)/);
+  assert.equal(at(57).length, 0);
+  // a stop before any target: once
+  const m2 = {};
+  const s = liveEvents([{ ...picks[0], code: "BBB" }], { quotes: { BBB: { price: 47.5 } } }, m2, {}, { today: "2026-11-09" });
+  assert.match(s[0], /🛑 BBB نزل تحت وقف الخسارة من توصية 2026-11-05 \(-5% من الدخول 50\$\)/);
+  assert.equal(liveEvents([{ ...picks[0], code: "BBB" }], { quotes: { BBB: { price: 47 } } }, m2).length, 0);
+});
+
+test("the picks followed: tech and momentum of the last 5 business days, the analyst on", () => {
+  const picks = [
+    { agent: "tech", code: "A", day: "2026-11-09" },
+    { agent: "momentum", code: "B", day: "2026-11-03" },
+    { agent: "momentum", code: "C", day: "2026-11-02" },
+    { agent: "insiders", code: "D", day: "2026-11-09" },
+    { agent: "tech", code: "E", day: "2026-11-06" },
+  ];
+  assert.deepEqual(followedPicks(picks, "2026-11-09", {}).map((p) => p.code), ["A", "B", "E"]);
+  assert.deepEqual(followedPicks(picks, "2026-11-09", { tech: false }).map((p) => p.code), ["B"]);
 });
