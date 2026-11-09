@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 process.env.QT_DATA_DIR ||= mkdtempSync(path.join(os.tmpdir(), "agents-"));
-const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText, followText, levelsOf, roleAr, activities, sectorAr, freshLevels, liveEvents, bigInsiderNew, followedPicks } = await import("../lib/agents.js");
+const { riskText, parseOpenInsider, insidersText, due, review, hrText, introText, verdict, momentumRow, momentumText, followText, levelsOf, roleAr, activities, sectorAr, freshLevels, liveEvents, bigInsiderNew, followedPicks, mineMoveEvents } = await import("../lib/agents.js");
 
 test("the risk manager: profit in dollars and dinars, the stop's result, and where to raise it", () => {
   const t = riskText([{ market: "us", code: "UBER", name: "UBER", mine: true, entry: 65.83, stop: 59.5, targets: [72, 75, 80, 88, 100], qty: 493, last: 69.46 }]);
@@ -266,4 +266,19 @@ test("the picks followed: tech, momentum and the insiders with levels, of the la
   ];
   assert.deepEqual(followedPicks(picks, "2026-11-09", {}).map((p) => p.code), ["A", "B", "F", "G", "E"]);
   assert.deepEqual(followedPicks(picks, "2026-11-09", { tech: false }).map((p) => p.code), ["B", "F", "G"]);
+});
+
+test("your own position, privately: every 1% step, with the profit in dollars and dinars", () => {
+  const list = [{ code: "UBER", market: "us", mine: true, entry: 65.83, qty: 493, stop: 59.5, targets: [72, 75, 80] }, { code: "X", market: "us", entry: 10 }];
+  const mem = {};
+  const at = (price, changePct = 1) => mineMoveEvents(list, { UBER: { price, changePct }, X: { price: 20 } }, mem, { day: "2026-11-09", acts: { UBER: "نقل وتوصيل" } });
+  assert.equal(at(69.5).length, 0); // the first look learns
+  assert.equal(at(70).length, 0); // +0.7%
+  const e = at(70.3, 2.5);
+  assert.equal(e.length, 1);
+  assert.match(e[0], /^👤 خاص لك · 📈 UBER · نقل وتوصيل\n💵 السعر الحين: 70\.3\$ \(\+2\.5% اليوم\) · طلع 1\.2% من آخر رسالة\n🟢 ربحك: \+2,204\$ ≈ \+676 د\.ك/);
+  assert.match(e[0], /🎯 الهدف الجاي: 72\$ \(\+2\.4%\) · 🛑 الوقف: 59\.5\$/);
+  assert.match(at(69.5, 1.4)[0], /📉 UBER[^\n]*\n[^\n]*نزل 1\.1%/);
+  // a new day starts over
+  assert.equal(mineMoveEvents(list, { UBER: { price: 75 } }, mem, { day: "2026-11-10" }).length, 0);
 });

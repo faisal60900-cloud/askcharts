@@ -520,6 +520,54 @@ async function live(send, ms = Date.now()) {
   return ev.length;
 }
 
+// ---------- 👤 خاص لك: your own US positions as they move ----------
+// Every 1% step in the price of one of your trades (from the last message), a private message with
+// the price, the day's change, your profit in dollars and dinars, the next target and the stop.
+// The first look of the day only learns where it is. To your private chat only, never the group.
+export function mineMoveEvents(list, quotes = {}, mem = {}, { day = "", step = 1, acts = {} } = {}) {
+  const ev = [];
+  for (const t of list.filter((t) => t.mine && t.entry > 0 && t.market !== "kw" && !t.closed)) {
+    const q = quotes[t.code];
+    if (!(q?.price > 0)) continue;
+    const px = q.price;
+    const m = mem[t.code];
+    if (!m || m.day !== day) {
+      mem[t.code] = { day, at: px };
+      continue;
+    }
+    const moved = ((px - m.at) / m.at) * 100;
+    if (Math.abs(moved) < step) continue;
+    m.at = px;
+    const qty = t.qty || 0;
+    const pnl = qty * (px - t.entry);
+    const kwd = pnl / KWD;
+    const up = (px / t.entry - 1) * 100;
+    const next = (t.targets || []).find((x) => x > px);
+    const name = acts[t.code] ? ` · ${acts[t.code]}` : "";
+    ev.push(
+      [
+        `👤 خاص لك · ${moved > 0 ? "📈" : "📉"} ${t.code}${name}`,
+        `💵 السعر الحين: ${n2(px)}$ (${q.changePct >= 0 ? "+" : ""}${n2(q.changePct, 1)}% اليوم) · ${moved > 0 ? "طلع" : "نزل"} ${n2(Math.abs(moved), 1)}% من آخر رسالة`,
+        qty ? `${pnl >= 0 ? "🟢" : "🔴"} ربحك: ${pnl >= 0 ? "+" : ""}${n2(pnl, 0)}$ ≈ ${kwd >= 0 ? "+" : ""}${n2(kwd, 0)} د.ك (${pct(up)} من دخولك ${n2(t.entry)}$ · ${n2(qty, 0)} سهم)` : `${pct(up)} من دخولك ${n2(t.entry)}$ (سجّل الكمية عشان أحسب ربحك)`,
+        [next ? `🎯 الهدف الجاي: ${n2(next)}$ (${pct((next / px - 1) * 100)})` : "", t.stop ? `🛑 الوقف: ${n2(t.stop)}$` : ""].filter(Boolean).join(" · "),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+  return ev;
+}
+async function mineMoves(ms = Date.now()) {
+  const list = trades.list().filter((t) => t.mine && t.market !== "kw");
+  if (!list.length) return 0;
+  const quotes = await nasdaqLiveQuotes([...new Set(list.map((t) => t.code))], "stocks").catch(() => ({}));
+  st.mine ||= {};
+  const ev = mineMoveEvents(list, quotes, st.mine, { day: nyDates(ms).today, acts: st.ar || {} });
+  save();
+  for (const t of ev) if (kwwatch.settings().telegram) await kwwatch.sendTelegram(t, null).catch(() => {});
+  return ev.length;
+}
+
 // ⚡ خالد: a big purchase by a company's own chief (or Berkshire) the moment it's filed
 export function bigInsiderNew(rows, seen = {}, { since = "", min = 1e6 } = {}) {
   const top = /chief executive|\bceo\b|\bcfo\b|chief financial|\bpres|chair|\bcob\b/i;
@@ -707,11 +755,14 @@ export function due(ms = Date.now(), sent = st.sent) {
   return out;
 }
 
+// where a report goes: Kuwait's to the Kuwait chat, فهد's (your positions and profit) to your
+// private chat only, the rest to the US one
+const marketOf = (name) => (name === "kw" ? "kw" : name === "risk" ? null : "us");
 // one report now, to Telegram too
 export async function sendNow(name) {
   const text = await run(name);
   keep(name, text);
-  if (text && kwwatch.settings().telegram) await kwwatch.sendTelegram(text.length > 3900 ? text.slice(0, 3890) + "…" : text, name === "kw" ? "kw" : "us");
+  if (text && kwwatch.settings().telegram) await kwwatch.sendTelegram(text.length > 3900 ? text.slice(0, 3890) + "…" : text, marketOf(name));
   return text;
 }
 
@@ -724,7 +775,7 @@ async function tick() {
     save();
     const text = await run(name).catch((e) => `${head(name)}\n\nما قدرت أجهز التقرير اليوم: ${e.message}`);
     keep(name, text);
-    if (text && kwwatch.settings().telegram) await kwwatch.sendTelegram(text.length > 3900 ? text.slice(0, 3890) + "…" : text, name === "kw" ? "kw" : "us").catch(() => {});
+    if (text && kwwatch.settings().telegram) await kwwatch.sendTelegram(text.length > 3900 ? text.slice(0, 3890) + "…" : text, marketOf(name)).catch(() => {});
   }
   // any time in the session: the picks that confirm (every 5 minutes), and the big insider buys (every 30)
   const n = parts(Date.now(), NY);
@@ -734,6 +785,10 @@ async function tick() {
   if (work && nyMin >= 9 * 60 + 35 && nyMin < 16 * 60 && Date.now() - (st.liveAt || 0) >= 5 * 60e3) {
     st.liveAt = Date.now();
     await live(tg).catch(() => {});
+  }
+  if (work && nyMin >= 9 * 60 + 30 && nyMin < 16 * 60 && Date.now() - (st.mineAt || 0) >= 2 * 60e3) {
+    st.mineAt = Date.now();
+    await mineMoves().catch(() => {});
   }
   if (st.on.insiders && work && nyMin >= 8 * 60 && nyMin < 18 * 60 && Date.now() - (st.insAt || 0) >= 30 * 60e3) {
     st.insAt = Date.now();
