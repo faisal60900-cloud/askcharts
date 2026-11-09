@@ -254,14 +254,15 @@ test("every target of a pick, each once, the stop before any, and back to the en
   assert.equal(liveEvents([{ ...picks[0], code: "BBB" }], { quotes: { BBB: { price: 47 } } }, m2).length, 0);
 });
 
-test("the picks followed: tech and momentum of the last 5 business days, the analyst on", () => {
+test("the picks followed: tech, momentum and the insiders with levels, of the last 5 business days, the analyst on", () => {
   const picks = [
     { agent: "tech", code: "A", day: "2026-11-09" },
     { agent: "momentum", code: "B", day: "2026-11-03" },
     { agent: "momentum", code: "C", day: "2026-11-02" },
     { agent: "insiders", code: "D", day: "2026-11-09" },
+    { agent: "insiders", code: "F", day: "2026-11-09", stop: 9, t1: 12 },
     { agent: "tech", code: "E", day: "2026-11-06" },
   ];
-  assert.deepEqual(followedPicks(picks, "2026-11-09", {}).map((p) => p.code), ["A", "B", "E"]);
-  assert.deepEqual(followedPicks(picks, "2026-11-09", { tech: false }).map((p) => p.code), ["B"]);
+  assert.deepEqual(followedPicks(picks, "2026-11-09", {}).map((p) => p.code), ["A", "B", "F", "E"]);
+  assert.deepEqual(followedPicks(picks, "2026-11-09", { tech: false }).map((p) => p.code), ["B", "F"]);
 });

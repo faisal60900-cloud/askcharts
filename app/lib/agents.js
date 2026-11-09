@@ -162,7 +162,12 @@ async function insiders(ms = Date.now()) {
   const text = insidersText(rows, { since, mine: myCodes("us"), acts, lv });
   // the five biggest, for the HR review: how the stocks the insiders bought did afterwards
   const seen = new Set();
-  rows.filter((r) => r.value >= 250e3 && r.date >= since && !seen.has(r.code) && seen.add(r.code)).sort((a, b) => b.value - a.value).slice(0, 5).forEach((r) => pick("insiders", r.code, { price: r.price }));
+  rows.filter((r) => r.value >= 250e3 && r.date >= since && !seen.has(r.code) && seen.add(r.code)).sort((a, b) => b.value - a.value).slice(0, 5).forEach((r) => {
+    // with the levels shown in the report, so the bot follows its targets and stop like the analysts'
+    const L = lv[r.code] || {};
+    const ok = L.stop > 0 && L.targets?.length;
+    pick("insiders", r.code, { price: r.price, ...(ok ? { stop: L.stop, t1: L.targets[0], targets: L.targets.slice(0, 3), ...(L.fresh || !(L.lo && L.hi) ? { entry: L.price } : { lo: L.lo, hi: L.hi }) } : {}) });
+  });
   return text;
 }
 
@@ -486,7 +491,7 @@ export function liveEvents(picks, { quotes = {}, buys = {}, recent = {} } = {}, 
   return ev;
 }
 
-// the picks still followed: tech and momentum, from the last 5 business days, still not done
+// the picks still followed: the analysts' and Khaled's (with levels), from the last 5 business days
 export function followedPicks(picks, today, on = {}) {
   const d = new Date(`${today}T12:00:00Z`);
   let n = 0;
@@ -495,7 +500,7 @@ export function followedPicks(picks, today, on = {}) {
     if (![0, 6].includes(d.getUTCDay())) n++;
   }
   const from = d.toISOString().slice(0, 10);
-  return picks.filter((p) => (p.agent === "tech" || p.agent === "momentum") && on[p.agent] !== false && p.day >= from && p.day <= today);
+  return picks.filter((p) => (p.agent === "tech" || p.agent === "momentum" || (p.agent === "insiders" && p.stop > 0 && p.t1 > 0)) && on[p.agent] !== false && p.day >= from && p.day <= today);
 }
 
 async function live(send, ms = Date.now()) {
@@ -507,7 +512,7 @@ async function live(send, ms = Date.now()) {
   const ev = liveEvents(picks, await liveState(codes, ms), st.live, st.ar || {}, { today });
   save();
   for (const t of ev) {
-    keep(t.startsWith("🚀") ? "momentum" : "tech", t);
+    keep(Object.keys(AGENTS).find((k) => t.startsWith(AGENTS[k].icon)) || "tech", t);
     await send(t);
   }
   return ev.length;
