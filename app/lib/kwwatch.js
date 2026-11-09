@@ -78,7 +78,7 @@ export async function linkTelegram() {
 // One Telegram group per market, if you want: add the bot to a group and send it the market's
 // command there (/kw@yourbot, /us@yourbot, /sa@yourbot or /ae@yourbot; /off@yourbot sends that
 // group's market back to the private chat). A market without its own group goes to the private chat;
-// one with a group goes there and a copy to the private chat.
+// one with a group goes to the private chat first, then the group right after.
 export const MARKET_NAMES = { kw: "🇰🇼 السوق الكويتي", us: "🇺🇸 السوق الأمريكي", sa: "🇸🇦 السوق السعودي", ae: "🇦🇪 سوق دبي" };
 export function routeCommand(text, bot = "") {
   const m = String(text || "").trim().match(/^\/(kw|us|sa|ae|off)(?:@(\w+))?\s*$/i);
@@ -136,19 +136,19 @@ export async function sendTelegram(text, market = null) {
   if (!cfg.tgToken || !cfg.tgChat) throw Object.assign(new Error("اربط تيليجرام أولًا"), { status: 400 });
   let msg = null;
   const copies = [];
+  const to = chatFor(market);
   try {
-    try {
-      msg = await tg("sendMessage", { chat_id: chatFor(market), text, disable_web_page_preview: true });
-    } catch (e) {
-      // a group the bot was removed from: fall back to the private chat
-      if (chatFor(market) === cfg.tgChat) throw e;
-      msg = await tg("sendMessage", { chat_id: cfg.tgChat, text, disable_web_page_preview: true });
-    }
-    // a market sent to a group: a copy to your private chat too, so you get it in both
-    if (String(msg?.chat?.id) !== String(cfg.tgChat)) {
+    // a market sent to a group: your private chat first, then the group right after
+    if (String(to) !== String(cfg.tgChat)) {
       const c = await tg("sendMessage", { chat_id: cfg.tgChat, text, disable_web_page_preview: true }).catch(() => null);
       if (c?.message_id) copies.push({ chat: c.chat?.id ?? cfg.tgChat, id: c.message_id });
-    }
+      try {
+        msg = await tg("sendMessage", { chat_id: to, text, disable_web_page_preview: true });
+      } catch (e) {
+        // a group the bot was removed from: the private copy is enough (or send it now)
+        msg = copies.length ? { chat: { id: copies[0].chat }, message_id: copies.shift().id } : await tg("sendMessage", { chat_id: cfg.tgChat, text, disable_web_page_preview: true });
+      }
+    } else msg = await tg("sendMessage", { chat_id: to, text, disable_web_page_preview: true });
     state.lastTelegram = { at: new Date().toISOString(), ok: true, note: "" };
   } catch (e) {
     state.lastTelegram = { at: new Date().toISOString(), ok: false, note: e.message };
