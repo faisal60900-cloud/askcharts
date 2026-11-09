@@ -261,8 +261,9 @@ test("the picks followed: tech, momentum and the insiders with levels, of the la
     { agent: "momentum", code: "C", day: "2026-11-02" },
     { agent: "insiders", code: "D", day: "2026-11-09" },
     { agent: "insiders", code: "F", day: "2026-11-09", stop: 9, t1: 12 },
+    { agent: "earn", code: "G", day: "2026-11-09", stop: 90, t1: 110 },
     { agent: "tech", code: "E", day: "2026-11-06" },
   ];
-  assert.deepEqual(followedPicks(picks, "2026-11-09", {}).map((p) => p.code), ["A", "B", "F", "E"]);
-  assert.deepEqual(followedPicks(picks, "2026-11-09", { tech: false }).map((p) => p.code), ["B", "F"]);
+  assert.deepEqual(followedPicks(picks, "2026-11-09", {}).map((p) => p.code), ["A", "B", "F", "G", "E"]);
+  assert.deepEqual(followedPicks(picks, "2026-11-09", { tech: false }).map((p) => p.code), ["B", "F", "G"]);
 });

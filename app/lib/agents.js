@@ -284,11 +284,11 @@ async function earn(ms = Date.now(), phase = "post") {
   const pre = phase === "pre";
   const rows = (await nasdaqEarnings(d.today).catch(() => [])).filter((r) => (pre ? r.when === "pre" : r.when !== "pre"));
   const mine = new Set(myCodes("us"));
-  const pick = rows.filter((r) => r.cap >= 5e9 || mine.has(r.code)).sort((a, b) => mine.has(b.code) - mine.has(a.code) || b.cap - a.cap).slice(0, 10);
-  if (!pick.length) return `${head("earn")}\n\nما في شركات كبيرة أعلنت نتائجها ${pre ? "الصبح قبل الافتتاح" : "الليلة"}.`;
-  const quotes = await nasdaqLiveQuotes(pick.map((r) => r.code), "stocks").catch(() => ({}));
+  const chosen = rows.filter((r) => r.cap >= 5e9 || mine.has(r.code)).sort((a, b) => mine.has(b.code) - mine.has(a.code) || b.cap - a.cap).slice(0, 10);
+  if (!chosen.length) return `${head("earn")}\n\nما في شركات كبيرة أعلنت نتائجها ${pre ? "الصبح قبل الافتتاح" : "الليلة"}.`;
+  const quotes = await nasdaqLiveQuotes(chosen.map((r) => r.code), "stocks").catch(() => ({}));
   const out = [];
-  for (const r of pick) {
+  for (const r of chosen) {
     const close = (await getCandles(`US:${r.code}`, "1D", 3).catch(() => ({ candles: [] }))).candles?.at(-1)?.close;
     const q = quotes[r.code];
     const move = q?.price > 0 && close > 0 ? (q.price / close - 1) * 100 : null;
@@ -301,6 +301,8 @@ async function earn(ms = Date.now(), phase = "post") {
   for (const r of out) {
     const { price: _, ...L } = await levels(r.code, r.price);
     Object.assign(r, L);
+    // with its levels, so the bot follows its targets and stop like the analysts'
+    if (r.price > 0 && L.stop > 0 && L.targets?.length) pick("earn", r.code, { price: r.price, stop: L.stop, t1: L.targets[0], targets: L.targets.slice(0, 3), ...(L.fresh || !(L.lo && L.hi) ? { entry: r.price } : { lo: L.lo, hi: L.hi }) });
   }
   return [
     head("earn"),
@@ -491,7 +493,7 @@ export function liveEvents(picks, { quotes = {}, buys = {}, recent = {} } = {}, 
   return ev;
 }
 
-// the picks still followed: the analysts' and Khaled's (with levels), from the last 5 business days
+// the picks still followed: the analysts', and Khaled's and Noura's with levels, from the last 5 business days
 export function followedPicks(picks, today, on = {}) {
   const d = new Date(`${today}T12:00:00Z`);
   let n = 0;
@@ -500,7 +502,7 @@ export function followedPicks(picks, today, on = {}) {
     if (![0, 6].includes(d.getUTCDay())) n++;
   }
   const from = d.toISOString().slice(0, 10);
-  return picks.filter((p) => (p.agent === "tech" || p.agent === "momentum" || (p.agent === "insiders" && p.stop > 0 && p.t1 > 0)) && on[p.agent] !== false && p.day >= from && p.day <= today);
+  return picks.filter((p) => (p.agent === "tech" || p.agent === "momentum" || (p.stop > 0 && p.t1 > 0)) && on[p.agent] !== false && p.day >= from && p.day <= today);
 }
 
 async function live(send, ms = Date.now()) {
