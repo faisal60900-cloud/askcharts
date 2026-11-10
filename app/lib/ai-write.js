@@ -53,6 +53,11 @@ export function usageText(u = usage(), today = new Date().toISOString().slice(0,
 }
 
 export let lastError = null;
+// These are short writing jobs (translate, summarise, a few lines on numbers), not puzzles: on
+// Claude, no thinking before the answer (thinking "between_tools", the lowest; with no tools there
+// is none) and a low effort. Thinking is billed as output, the dear part, and was most of it.
+// If the API refuses these fields (an older model), it's asked again without them, and remembered.
+let lean = true;
 export async function write(system, prompt, { maxTokens = 900, fetchImpl = fetch } = {}) {
   const c = agentConfig();
   if (!c?.key || !c?.model) {
@@ -65,10 +70,14 @@ export async function write(system, prompt, { maxTokens = 900, fetchImpl = fetch
       const res = await fetchImpl(`${c.base}/v1/messages`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": c.key, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: c.model, max_tokens: maxTokens, system, messages: [{ role: "user", content: prompt }] }),
+        body: JSON.stringify({ model: c.model, max_tokens: maxTokens, system, messages: [{ role: "user", content: prompt }], ...(lean ? { thinking: { type: "between_tools" }, output_config: { effort: "low" } } : {}) }),
         signal: AbortSignal.timeout(60000),
       });
       const j = await res.json();
+      if (!res.ok && lean && res.status === 400 && /thinking|effort|output_config|between_tools/i.test(String(j?.error?.message || ""))) {
+        lean = false;
+        return write(system, prompt, { maxTokens, fetchImpl });
+      }
       if (!res.ok) {
         lastError = `${res.status}: ${String(j?.error?.message || "").split(c.key).join("…").slice(0, 200)}`;
         return null;
