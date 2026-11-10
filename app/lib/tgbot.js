@@ -222,6 +222,8 @@ export async function answer(text, chatId = "me") {
     const list = usflow.setFollow(off ? usflow.follow().filter((c) => c !== code) : [...usflow.follow(), code]);
     return off ? `✋ وقفت متابعة ${code}.\nالمتابعة الحين: ${list.join("، ") || "ولا سهم"}` : list.includes(code) ? `👀 أتابع ${code} عن قرب: أخباره، وكل 2% يتحرك وقت السوق، والسيولة غير العادية، وكل 3% قبل الافتتاح وبعد الإغلاق.\nالمتابعة الحين: ${list.join("، ")}` : `القائمة مليانة (15 سهم). وقّف متابعة سهم أول: الغ متابعة رمز`;
   }
+  // 📊 the AI meter
+  if (/^\/?(?:الاستهلاك|استهلاك|التوكن|توكن|usage)$/i.test(t)) return (await import("./ai-write.js")).usageText();
   // 🕌 the Sharia filter: its state, on, off, or one stock's screen ("شرعي UBER")
   const sh = t.replace(/^\//, "").trim().match(/^(?:شرعي|الشرعية|فلتر الشرعية|sharia)(?:\s+(.+))?$/i);
   if (sh) {

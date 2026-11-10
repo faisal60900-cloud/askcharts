@@ -484,6 +484,10 @@ async function handle(req, res) {
     if (p === "/api/uswatch/ai-test" && req.method === "POST") return send(res, 200, await uswatch.aiTest());
     if (p === "/api/uswatch/preview") return send(res, 200, await uswatch.preview(q.code));
     if (p === "/api/uswatch/radar" && req.method === "POST") return send(res, 200, await uswatch.radar());
+    if (p === "/api/ai-usage") {
+      const m = await import("./lib/ai-write.js");
+      return send(res, 200, { usage: m.usage(), text: m.usageText() });
+    }
     // 🕌 the Sharia filter: GET its state or ?codes=A,B screens; POST {on}
     if (p === "/api/sharia") {
       if (req.method === "POST") {
