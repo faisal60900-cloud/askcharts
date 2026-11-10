@@ -59,6 +59,18 @@ test("keep: the non-compliant out, the unknown kept, each stock fetched once a m
   };
   const items = [{ code: "GOOD" }, { code: "BAD" }, { code: "JPM" }, { code: "ERR" }, { code: "TAP" }];
   sharia.reset({ on: true, cache: {} });
+  // the label mode (the default): all kept, each marked
+  assert.equal((await sharia.keep(items, (x) => x.code, { finImpl })).length, 5);
+  assert.equal(sharia.tag("GOOD"), "🕌 شرعي");
+  assert.equal(sharia.tag("TAP"), "⛔ غير شرعي (خمور)");
+  assert.match(sharia.tag("BAD"), /^⛔ غير شرعي \(الديون 90% من قيمة الشركة/);
+  assert.equal(sharia.tag("ERR"), "⚠️ الشرعية غير مؤكدة");
+  assert.equal(sharia.tag("NEVER"), "");
+  assert.equal(sharia.tag("KW:NBK"), "⛔ غير شرعي (بنك تقليدي (فوائد))");
+  assert.equal(sharia.tag("KW:KFH"), "🕌 شرعي");
+  sharia.reset({ on: true, cache: {} });
+  calls = 0;
+  sharia.setMode("filter");
   const kept = await sharia.keep(items, (x) => x.code, { finImpl });
   assert.deepEqual(kept.map((x) => x.code), ["GOOD", "ERR"]);
   assert.equal(calls, 4); // TAP needed no statements
@@ -67,7 +79,8 @@ test("keep: the non-compliant out, the unknown kept, each stock fetched once a m
   // off: everything passes
   sharia.setOn(false);
   assert.equal((await sharia.keep(items, (x) => x.code, { finImpl })).length, 5);
-  sharia.setOn(true);
+  assert.equal(sharia.tag("GOOD"), "");
+  sharia.setMode("label");
   assert.match(sharia.label({ status: "ok", debtPct: 12.3, cashPct: 4 }), /🕌 متوافق مع الشريعة \(الديون 12%، الكاش 4%\)/);
   assert.match(sharia.label({ status: "no", why: "خمور" }), /⛔ غير متوافق: خمور/);
 });

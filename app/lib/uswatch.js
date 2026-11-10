@@ -153,6 +153,7 @@ export function entryMessage(r, { market = null, note = null, reach = reachOf(),
   const away = p ? ((r.price - p.entryZone.to) / p.entryZone.to) * 100 : null;
   return [
     `🟢🇺🇸 إشارة شراء — ${r.code} (${r.en})`,
+    sharia.tag(r.code),
     aboutLine(company),
     `السعر الآن: ${usd(r.price)} (${pct(r.changePct)} اليوم)`,
     (r.changePct ?? 0) > 3 ? `⚠️ السهم طالع اليوم ${pct(r.changePct)}: جزء من الحركة صار، والأحوط تشتري بكمية أقل أو تنتظر تراجع للمنطقة.` : "",
@@ -195,7 +196,7 @@ export async function runOnce({ force = false, list: only = null } = {}) {
     // six at a time: the 500 stocks in about a minute
     await Promise.all(Array.from({ length: 6 }, worker));
     const ok = rows.filter((r) => !r.error);
-    // 🕌 the non-compliant ones are left out (lib/sharia.js), when the filter is on
+    // 🕌 each checked (lib/sharia.js): marked شرعي or غير شرعي, or left out in the filter mode
     const entries = await sharia.keep(ok.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue), (r) => r.code);
     const date = ny().date;
     const unsent = entries.filter((r) => force || !state.sent[`${r.code}|${date}`]);
@@ -390,7 +391,8 @@ export async function newsCheck() {
     // the price now (or the last pre/after-market trade), so the news reads against the stock
     const q = (await nasdaqLiveQuotes([code], "stocks").catch(() => ({})))[code];
     const px = q?.price > 0 ? `💵 السعر الحين: ${q.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}$${Number.isFinite(q.changePct) ? ` (${q.changePct > 0 ? "+" : ""}${q.changePct.toFixed(1)}% اليوم)` : ""}` : "";
-    await send([`📰 أخبار ${code} (${w.en})`, px, ar || items.map((h) => `• ${h.title}`).join("\n"), items.map((h) => h.url).join("\n")].filter(Boolean).join("\n\n"), { symbol: w.symbol, name: "" });
+    await sharia.keep([code], (c) => c).catch(() => {});
+    await send([`📰 أخبار ${code} (${w.en})${sharia.tag(code) ? ` · ${sharia.tag(code)}` : ""}`, px, ar || items.map((h) => `• ${h.title}`).join("\n"), items.map((h) => h.url).join("\n")].filter(Boolean).join("\n\n"), { symbol: w.symbol, name: "" });
     sent += items.length;
   }
   for (const [u, at] of Object.entries(state.newsSeen)) if (Date.now() - at > 14 * 86400e3) delete state.newsSeen[u];

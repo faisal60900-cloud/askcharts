@@ -159,7 +159,7 @@ async function insiders(ms = Date.now()) {
   const cand = rows.filter((r) => r.value >= 250e3 && r.date >= since && !seen0.has(r.code) && seen0.add(r.code)).sort((a, b) => b.value - a.value).slice(0, 15).map((r) => r.code);
   // 🕌 only the compliant ones (when the filter is on); the unchecked smaller ones are left out too
   const listed = (await sharia.keep(cand, (c) => c)).slice(0, 10);
-  if (sharia.settings().on) {
+  if (sharia.settings().on && sharia.settings().mode === "filter") {
     const okSet = new Set(listed);
     rows.splice(0, rows.length, ...rows.filter((r) => okSet.has(r.code)));
   }
@@ -240,7 +240,7 @@ async function levels(code, price) {
 // One stock, in Arabic: the symbol, its business, the price, the entry, the targets and the stop.
 export function stockBlock(code, { act = "", price, chg, entry, lo, hi, stop, targets = [], note = "", mine = false, fresh = false } = {}) {
   return [
-    `• ${code}${mine ? " 💼" : ""}${act ? ` · ${act}` : ""}`,
+    `• ${code}${mine ? " 💼" : ""}${act ? ` · ${act}` : ""}${sharia.tag(code) ? ` · ${sharia.tag(code)}` : ""}`,
     price > 0 ? `   💵 السعر: ${n2(price)}$${Number.isFinite(chg) ? ` (${pct(chg)})` : ""}` : "",
     entry ? `   🟢 الدخول فوق: ${n2(entry)}$` : lo && hi ? `   🟢 منطقة الشراء: ${n2(lo)}$ – ${n2(hi)}$` : "",
     targets.length ? `   🎯 الأهداف${fresh ? " (من السعر الحالي)" : ""}: ${targets.map((t) => `${n2(t)}$`).join(" · ")}` : "",
@@ -554,7 +554,7 @@ export function mineMoveEvents(list, quotes = {}, mem = {}, { day = "", step = 1
     const name = acts[t.code] ? ` · ${acts[t.code]}` : "";
     ev.push(
       [
-        `👤 خاص لك · ${moved > 0 ? "📈" : "📉"} ${t.code}${name}`,
+        `👤 خاص لك · ${moved > 0 ? "📈" : "📉"} ${t.code}${name}${sharia.tag(t.code) ? ` · ${sharia.tag(t.code)}` : ""}`,
         `💵 السعر الحين: ${n2(px)}$ (${q.changePct >= 0 ? "+" : ""}${n2(q.changePct, 1)}% اليوم) · ${moved > 0 ? "طلع" : "نزل"} ${n2(Math.abs(moved), 1)}% من آخر رسالة`,
         qty ? `${pnl >= 0 ? "🟢" : "🔴"} ربحك: ${pnl >= 0 ? "+" : ""}${n2(pnl, 0)}$ ≈ ${kwd >= 0 ? "+" : ""}${n2(kwd, 0)} د.ك (${pct(up)} من دخولك ${n2(t.entry)}$ · ${n2(qty, 0)} سهم)` : `${pct(up)} من دخولك ${n2(t.entry)}$ (سجّل الكمية عشان أحسب ربحك)`,
         [next ? `🎯 الهدف الجاي: ${n2(next)}$ (${pct((next / px - 1) * 100)})` : "", t.stop ? `🛑 الوقف: ${n2(t.stop)}$` : ""].filter(Boolean).join(" · "),

@@ -58,15 +58,16 @@ export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, 
   const ups = list.filter((r) => r.q.changePct >= min).sort((a, b) => b.q.changePct - a.q.changePct).slice(0, up);
   const downs = list.filter((r) => r.q.changePct <= -min).sort((a, b) => a.q.changePct - b.q.changePct).slice(0, down);
   const why = (c) => (out.has(c) ? "\n   📰 السبب: نتائجه طلعت" : heads[c] ? `\n   📰 ${String(heads[c]).slice(0, 90)}` : "");
-  const line = (r) => `${r.q.changePct > 0 ? "⬆️" : "⬇️"} ${r.ticker}: ${n2(r.q.price)}$ (${pct(r.q.changePct)})${r.q.changePct >= 15 ? " ⚠️ قفزة كبيرة" : ""}${r.name ? ` · ${short(r.name)}` : ""}${why(r.ticker)}`;
+  const sh = (c) => (sharia.tag(c) ? ` · ${sharia.tag(c)}` : "");
+  const line = (r) => `${r.q.changePct > 0 ? "⬆️" : "⬇️"} ${r.ticker}: ${n2(r.q.price)}$ (${pct(r.q.changePct)})${r.q.changePct >= 15 ? " ⚠️ قفزة كبيرة" : ""}${r.name ? ` · ${short(r.name)}` : ""}${sh(r.ticker)}${why(r.ticker)}`;
   const minePct = [...new Set(mine)].map((c) => ({ c, q: quotes[c] })).filter((x) => x.q?.price > 0 && Number.isFinite(x.q.changePct));
-  const own = minePct.map((x) => `• ${x.c}: ${n2(x.q.price)}$ (${pct(x.q.changePct)})${out.has(x.c) ? " · 📰 نتائجه طلعت" : ""}`);
+  const own = minePct.map((x) => `• ${x.c}: ${n2(x.q.price)}$ (${pct(x.q.changePct)})${sh(x.c)}${out.has(x.c) ? " · 📰 نتائجه طلعت" : ""}`);
   // the calendar: the big companies first, yours always
   const cal = (rowsOf) => {
     const mineSet = new Set(mine);
     const pick = (rowsOf || []).filter((r) => r.cap >= minCap || mineSet.has(r.code)).sort((a, b) => mineSet.has(b.code) - mineSet.has(a.code) || b.cap - a.cap).slice(0, 10);
     const px = (c) => (quotes[c]?.price > 0 ? ` · ${n2(quotes[c].price)}$${Number.isFinite(quotes[c].changePct) ? ` (${pct(quotes[c].changePct)})` : ""}` : "");
-    return pick.map((r) => `• ${r.code}${mineSet.has(r.code) ? " 💼" : ""} · ${short(r.name)}${r.cap ? ` (${bn(r.cap)})` : ""}${px(r.code)}${beatLine(surp[r.code]) ? `\n   ${beatLine(surp[r.code])}` : ""}`).join("\n");
+    return pick.map((r) => `• ${r.code}${mineSet.has(r.code) ? " 💼" : ""} · ${short(r.name)}${r.cap ? ` (${bn(r.cap)})` : ""}${px(r.code)}${sh(r.code)}${beatLine(surp[r.code]) ? `\n   ${beatLine(surp[r.code])}` : ""}`).join("\n");
   };
   const tonight = cal(earn.tonight);
   const tomorrow = cal(earn.tomorrow);
@@ -108,6 +109,7 @@ export async function movers({ size = 1000, ms = Date.now() } = {}) {
   // 🕌 the non-compliant movers and reporters are left out (lib/sharia.js), when the filter is on
   if (sharia.settings().on) {
     const mineSet0 = new Set(mine);
+    await sharia.keep(mine, (c) => c); // checked, for their marks
     const movers = rows.filter((r) => Math.abs(quotes[r.ticker]?.changePct || 0) >= 8).slice(0, 40);
     const keepMv = new Set(await sharia.keep(movers.map((r) => r.ticker), (c) => c));
     rows = rows.filter((r) => keepMv.has(r.ticker) || Math.abs(quotes[r.ticker]?.changePct || 0) < 8);

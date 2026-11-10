@@ -14,11 +14,19 @@ import { financials } from "./market-info.js";
 const KEY = "sharia";
 // the rules' version: a change of the lists clears the kept screens
 const VERSION = 2;
-let st = store.read(KEY, { on: true, cache: {} });
+let st = store.read(KEY, { on: true, mode: "label", cache: {} });
 if (st.v !== VERSION) st = { ...st, v: VERSION, cache: {} };
+st.mode ||= "label";
 const save = () => store.write(KEY, st);
-export const reset = (s = { on: true, cache: {} }) => (st = { v: VERSION, ...s });
-export const settings = () => ({ on: st.on !== false, cached: Object.keys(st.cache || {}).length });
+export const reset = (s = { on: true, cache: {} }) => (st = { v: VERSION, mode: "label", ...s });
+export const settings = () => ({ on: st.on !== false, mode: st.mode || "label", cached: Object.keys(st.cache || {}).length });
+// "label": every stock goes out marked شرعي or غير شرعي; "filter": the non-compliant are left out
+export function setMode(mode) {
+  st.on = true;
+  st.mode = mode === "filter" ? "filter" : "label";
+  save();
+  return settings();
+}
 export function setOn(on) {
   st.on = !!on;
   save();
@@ -120,7 +128,8 @@ export async function check(code, { finImpl = financials, now = Date.now() } = {
   return r;
 }
 
-// keep only the compliant ones (unknown ones too, marked), when the filter is on.
+// Checks them all (so their marks are ready), then: in "filter" mode keeps the compliant and the
+// unknown ones; in "label" mode keeps all. Nothing when the filter is off.
 // codeOf(item) gives the code ("UBER", "US:UBER", "KW:NBK"). Six at a time.
 export async function keep(items, codeOf = (x) => x.code, opts = {}) {
   if (st.on === false || !items?.length) return items || [];
@@ -133,7 +142,20 @@ export async function keep(items, codeOf = (x) => x.code, opts = {}) {
     }
   };
   await Promise.all(Array.from({ length: Math.min(6, items.length) }, worker));
-  return items.filter((_, k) => res[k].status !== "no");
+  return st.mode === "filter" ? items.filter((_, k) => res[k].status !== "no") : items;
+}
+
+// the mark for a stock already checked: "🕌 شرعي", "⛔ غير شرعي (why)", or "" (off, or not checked)
+export function tag(code) {
+  if (st.on === false) return "";
+  const c = String(code || "").toUpperCase();
+  const hit = st.cache[/^[A-Z]{2}:/.test(c) ? c : `US:${c}`];
+  if (!hit) {
+    if (/^KW:/.test(c)) return activity({ code: c }).ok ? "🕌 شرعي" : `⛔ غير شرعي (${activity({ code: c }).why})`;
+    return "";
+  }
+  const r = hit.r;
+  return r.status === "ok" ? "🕌 شرعي" : r.status === "no" ? `⛔ غير شرعي (${r.why})` : "⚠️ الشرعية غير مؤكدة";
 }
 
 // one line for a stock's message

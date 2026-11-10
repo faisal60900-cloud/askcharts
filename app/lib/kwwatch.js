@@ -239,6 +239,7 @@ export function message(r, company = "") {
     tg = p?.targets || [];
   return [
     `${r.code}${r.ar ? ` (${r.ar})` : ` (${r.en})`} — السعر ${num(r.price)}`,
+    sharia.tag(`KW:${r.code}`),
     aboutLine(company),
     `اختراق ${num(r.breakout?.level)} ✓ بسيولة ${num(r.breakout?.vol ?? r.relVol)}x · سيولة داخلة ${r.flow?.inflowPct}% · شراء ${r.buyToday}%`,
     `الاتجاه الأسبوعي صاعد · RSI ${num(r.rsi)} · إغلاق قرب القمة · الإشارات ${r.positives}✓ ${r.negatives}✗`,
@@ -272,7 +273,7 @@ export async function runOnce({ force = false } = {}) {
     };
     await Promise.all([worker(), worker(), worker()]);
     const today = kuwaitNow().date;
-    // 🕌 the conventional banks and insurers are left out (lib/sharia.js), when the filter is on
+    // 🕌 the conventional banks and insurers: marked غير شرعي, or left out in the filter mode (lib/sharia.js)
     const entries = await sharia.keep(rows.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue), (r) => `KW:${r.code}`);
     const fresh = [];
     for (const r of entries) {
