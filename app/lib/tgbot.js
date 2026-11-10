@@ -21,6 +21,8 @@ import { sectorsText } from "../public/lib/sectors.js";
 import { movers } from "./premovers.js";
 import * as usflow from "./usflow.js";
 import * as agents from "./agents.js";
+import * as sharia from "./sharia.js";
+const KW_CODES = new Set(KUWAIT_STOCKS.map((s) => s.code));
 export { flowText };
 
 const LISTS = [
@@ -104,7 +106,7 @@ export function readingText({ market, stock }, row, r, note = null, today = null
     .join("\n");
 }
 
-const HELP = "اكتب لي رمز السهم أو اسمه، وأرد عليك بتحليله:\n🇰🇼 KFH أو بيتك · NBK أو الوطني\n🇸🇦 2222 أو أرامكو · 1120 أو الراجحي\n🇦🇪 EMAAR أو إعمار\n🇺🇸 SPCX · NVDA · AAPL\n(لسهم أمريكي رمزه يشبه سهم خليجي اكتب: us STC)\n\n📊 قطاعات: سيولة قطاعات الكويت · قطاعات امريكا: قطاعات السوق الأمريكي\n📡 قبل الافتتاح: أكبر تحركات أمريكا قبل الافتتاح وأسهمك\n👀 تابع IREN: متابعة سهم أمريكي عن قرب (أخباره وتحركاته حتى قبل الافتتاح وبعد الإغلاق) · الغ متابعة IREN · المتابعة\n👥 الفريق: تقارير يومية خاصة من 5 وكلاء (فني، والكبار، والنتائج، والمخاطر، والكويت)";
+const HELP = "اكتب لي رمز السهم أو اسمه، وأرد عليك بتحليله:\n🇰🇼 KFH أو بيتك · NBK أو الوطني\n🇸🇦 2222 أو أرامكو · 1120 أو الراجحي\n🇦🇪 EMAAR أو إعمار\n🇺🇸 SPCX · NVDA · AAPL\n(لسهم أمريكي رمزه يشبه سهم خليجي اكتب: us STC)\n\n📊 قطاعات: سيولة قطاعات الكويت · قطاعات امريكا: قطاعات السوق الأمريكي\n📡 قبل الافتتاح: أكبر تحركات أمريكا قبل الافتتاح وأسهمك\n👀 تابع IREN: متابعة سهم أمريكي عن قرب (أخباره وتحركاته حتى قبل الافتتاح وبعد الإغلاق) · الغ متابعة IREN · المتابعة\n👥 الفريق: تقارير يومية خاصة من 5 وكلاء (فني، والكبار، والنتائج، والمخاطر، والكويت)\n🕌 شرعي: فلتر الأسهم الشرعية · شرعي UBER: فحص سهم";
 
 // The reading without the analyst's note, for a stock found from what was typed (or null).
 async function plainReading(found) {
@@ -219,6 +221,20 @@ export async function answer(text, chatId = "me") {
     const off = !/^(تابع|follow)$/i.test(fol[1]);
     const list = usflow.setFollow(off ? usflow.follow().filter((c) => c !== code) : [...usflow.follow(), code]);
     return off ? `✋ وقفت متابعة ${code}.\nالمتابعة الحين: ${list.join("، ") || "ولا سهم"}` : list.includes(code) ? `👀 أتابع ${code} عن قرب: أخباره، وكل 2% يتحرك وقت السوق، والسيولة غير العادية، وكل 3% قبل الافتتاح وبعد الإغلاق.\nالمتابعة الحين: ${list.join("، ")}` : `القائمة مليانة (15 سهم). وقّف متابعة سهم أول: الغ متابعة رمز`;
+  }
+  // 🕌 the Sharia filter: its state, on, off, or one stock's screen ("شرعي UBER")
+  const sh = t.replace(/^\//, "").trim().match(/^(?:شرعي|الشرعية|فلتر الشرعية|sharia)(?:\s+(.+))?$/i);
+  if (sh) {
+    const arg = (sh[1] || "").trim();
+    if (/^(?:شغل|تشغيل|on)$/i.test(arg)) return sharia.setOn(true), `🕌 فلتر الشرعية شغال: التوصيات والإشارات والأخبار بس للأسهم المتوافقة.\n(الديون والكاش تحت 30% من قيمة الشركة، وبدون نشاط محرّم)`;
+    if (/^(?:وقف|ايقاف|إيقاف|off)$/i.test(arg)) return sharia.setOn(false), "⏸️ وقفت فلتر الشرعية: التوصيات ترجع لكل الأسهم.\nترجعه: شرعي شغل";
+    if (arg) {
+      const code = arg.toUpperCase().replace(/^US\s+/, "");
+      const kw = KW_CODES.has(code);
+      const r = await sharia.check(kw ? `KW:${code}` : code);
+      return `🕌 ${code}: ${sharia.label(r)}\n\nفحص بمعايير AAOIFI: نشاط الشركة، والديون والكاش تحت 30% من قيمتها السوقية. نسبة دخل الفوائد ما تنفحص (ما في بياناتها). هذا فحص مو فتوى.`;
+    }
+    return `🕌 فلتر الشرعية ${sharia.settings().on ? "شغال ✅" : "موقوف ⏸️"}\nيشيل من التوصيات والإشارات والأخبار: البنوك التقليدية، والتأمين التقليدي، والإقراض، والخمور، والتبغ، ولحم الخنزير، والقمار، والشركات اللي ديونها أو كاشها 30% أو أكثر من قيمتها.\n\nشرعي رمز: فحص سهم (مثل: شرعي UBER)\nشرعي وقف · شرعي شغل`;
   }
   if (/^\/?(?:المتابعة|متابعاتي|following)$/i.test(t)) return `👀 الأسهم اللي أتابعها عن قرب: ${usflow.follow().join("، ") || "ولا سهم"}\nتابع رمز · الغ متابعة رمز`;
   // the biggest US pre-market movers and your stocks: "قبل الافتتاح"

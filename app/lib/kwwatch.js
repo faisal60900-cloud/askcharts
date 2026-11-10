@@ -6,6 +6,7 @@ import { getCandles } from "./providers.js";
 import * as store from "./store.js";
 import * as alerts from "./alerts.js";
 import { KUWAIT_STOCKS } from "../public/lib/kuwait-market.js";
+import * as sharia from "./sharia.js";
 import { scanRow } from "../public/lib/kuwait-scan.js";
 import * as trades from "./trades.js";
 import { flowFor } from "./flow.js";
@@ -271,7 +272,8 @@ export async function runOnce({ force = false } = {}) {
     };
     await Promise.all([worker(), worker(), worker()]);
     const today = kuwaitNow().date;
-    const entries = rows.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue);
+    // 🕌 the conventional banks and insurers are left out (lib/sharia.js), when the filter is on
+    const entries = await sharia.keep(rows.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue), (r) => `KW:${r.code}`);
     const fresh = [];
     for (const r of entries) {
       const key = `${r.code}|${today}`;

@@ -26,6 +26,7 @@ import * as kwflow from "./lib/kwflow.js";
 import * as usflow from "./lib/usflow.js";
 import * as premovers from "./lib/premovers.js";
 import * as agents from "./lib/agents.js";
+import * as sharia from "./lib/sharia.js";
 import { sectors } from "./lib/sectors.js";
 import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
@@ -483,6 +484,19 @@ async function handle(req, res) {
     if (p === "/api/uswatch/ai-test" && req.method === "POST") return send(res, 200, await uswatch.aiTest());
     if (p === "/api/uswatch/preview") return send(res, 200, await uswatch.preview(q.code));
     if (p === "/api/uswatch/radar" && req.method === "POST") return send(res, 200, await uswatch.radar());
+    // 🕌 the Sharia filter: GET its state or ?codes=A,B screens; POST {on}
+    if (p === "/api/sharia") {
+      if (req.method === "POST") {
+        const b = await readBody(req);
+        return send(res, 200, sharia.setOn(b.on !== false));
+      }
+      if (q.codes) {
+        const out = {};
+        for (const c of String(q.codes).split(",").map((x) => x.trim()).filter(Boolean).slice(0, 60)) out[c] = await sharia.check(c).catch((e) => ({ status: "unknown", why: e.message }));
+        return send(res, 200, out);
+      }
+      return send(res, 200, sharia.settings());
+    }
     if (p === "/api/agents") {
       if (req.method === "POST") return send(res, 200, agents.update(await readBody(req, 1e4)));
       return send(res, 200, agents.settings());

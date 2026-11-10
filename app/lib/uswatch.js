@@ -7,6 +7,7 @@ import { getCandles, nasdaqScreener, usMarket, nasdaqLiveQuotes } from "./provid
 import * as store from "./store.js";
 import * as alerts from "./alerts.js";
 import * as kwwatch from "./kwwatch.js";
+import * as sharia from "./sharia.js";
 import { news as newsOf } from "./market-info.js";
 import { write, ANALYST } from "./ai-write.js";
 import * as aiw from "./ai-write.js";
@@ -194,7 +195,8 @@ export async function runOnce({ force = false, list: only = null } = {}) {
     // six at a time: the 500 stocks in about a minute
     await Promise.all(Array.from({ length: 6 }, worker));
     const ok = rows.filter((r) => !r.error);
-    const entries = ok.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue);
+    // 🕌 the non-compliant ones are left out (lib/sharia.js), when the filter is on
+    const entries = await sharia.keep(ok.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue), (r) => r.code);
     const date = ny().date;
     const unsent = entries.filter((r) => force || !state.sent[`${r.code}|${date}`]);
 

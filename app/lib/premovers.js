@@ -12,6 +12,7 @@ import { news as newsOf } from "./market-info.js";
 import * as trades from "./trades.js";
 import * as usflow from "./usflow.js";
 import * as store from "./store.js";
+import * as sharia from "./sharia.js";
 
 const n2 = (v) => Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const pct = (v) => `${v > 0 ? "+" : ""}${Number(v).toFixed(1)}%`;
@@ -86,7 +87,7 @@ export function moversText(rows, quotes, mine = [], { at = "", min = 8, up = 8, 
 }
 
 export async function movers({ size = 1000, ms = Date.now() } = {}) {
-  const rows = (await nasdaqScreener("stocks"))
+  let rows = (await nasdaqScreener("stocks"))
     .filter((r) => r.price >= 5 && r.marketCap >= 2e9 && /^[A-Z]{1,5}$/.test(r.ticker))
     .sort((a, b) => b.price * b.volume - a.price * a.volume)
     .slice(0, size);
@@ -104,6 +105,20 @@ export async function movers({ size = 1000, ms = Date.now() } = {}) {
     tonight: today.filter((r) => r.when === "post"),
     tomorrow: next.filter((r) => r.when === "pre"),
   };
+  // 🕌 the non-compliant movers and reporters are left out (lib/sharia.js), when the filter is on
+  if (sharia.settings().on) {
+    const mineSet0 = new Set(mine);
+    const movers = rows.filter((r) => Math.abs(quotes[r.ticker]?.changePct || 0) >= 8).slice(0, 40);
+    const keepMv = new Set(await sharia.keep(movers.map((r) => r.ticker), (c) => c));
+    rows = rows.filter((r) => keepMv.has(r.ticker) || Math.abs(quotes[r.ticker]?.changePct || 0) < 8);
+    const cal = async (list) => {
+      const big = list.filter((r) => r.cap >= 2e9 || mineSet0.has(r.code)).sort((a, b) => b.cap - a.cap).slice(0, 16);
+      const ok = new Set(await sharia.keep(big.map((r) => r.code), (c) => c));
+      return list.filter((r) => ok.has(r.code) || mineSet0.has(r.code));
+    };
+    earn.tonight = await cal(earn.tonight);
+    earn.tomorrow = await cal(earn.tomorrow);
+  }
   // for the biggest movers without results out, the latest headline
   const big = rows
     .filter((r) => Math.abs(quotes[r.ticker]?.changePct || 0) >= 8 && !earn.out.has(r.ticker))
