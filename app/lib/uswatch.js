@@ -23,7 +23,7 @@ import { about, aboutLine } from "./about.js";
 
 // light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
 // minPrice / maxPrice: the recommendations only for stocks in this price range (dollars)
-const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true, prealerts: true, minPrice: 1, maxPrice: 200 };
+const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true, prealerts: true, minPrice: 1, maxPrice: 200, aiMax: 5 };
 let cfg = { ...DEFAULTS, ...store.read("uswatch", {}) };
 let state = { sent: {}, newsSeen: {}, watched: {}, briefs: {}, lastRun: null, lastScanAt: 0, lastNewsAt: 0, lastEntries: [], near: [], lastError: null, ...store.read("uswatch-state", {}) };
 const saveState = () => store.write("uswatch-state", state);
@@ -207,7 +207,8 @@ export async function runOnce({ force = false, list: only = null } = {}) {
     // A signal the price has already run away from (more than 3% over the buy zone) is a chase, not
     // the trade that was tested: it goes in the close summary instead of a message now.
     // (a late one isn't marked sent: if the price comes back to the zone, it can still go out)
-    const fresh = unsent.filter((r) => force || !chased(r));
+    // the strongest first (they get the analyst's note when its daily room is short)
+    const fresh = unsent.filter((r) => force || !chased(r)).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
     for (const r of fresh) state.sent[`${r.code}|${date}`] = Date.now();
     (state.chased ||= {})[date] = [...new Set([...(state.chased[date] || []), ...unsent.filter((r) => !fresh.includes(r)).map((r) => r.code)])];
     for (const d of Object.keys(state.chased)) if (d < date) delete state.chased[d];
@@ -221,8 +222,14 @@ export async function runOnce({ force = false, list: only = null } = {}) {
     }
     const market = fresh.length ? await snapshot().catch(() => null) : null;
     // the analyst's notes all at once, so the last signal isn't kept waiting for the others'
+    // the analyst's note (tokens) for the day's first aiMax signals only; the rest go out without it
+    state.aiNotes ||= {};
+    const today0 = ny().date;
+    const room = Math.max(0, (cfg.aiMax ?? 5) - (state.aiNotes[today0] || 0));
+    state.aiNotes = { [today0]: (state.aiNotes[today0] || 0) + Math.min(room, fresh.length) };
     const notes = await Promise.all(
-      fresh.map(async (r) => {
+      fresh.map(async (r, k) => {
+        if (k >= room) return null;
         const heads = (await newsOf(r.symbol).catch(() => ({ items: [] }))).items.slice(0, 4).map((h) => h.title);
         return ai(
           `حلل إشارة الاختراق هذي في 4 إلى 6 أسطر: قوة الاختراق والسيولة، وضع السوق العام، أي الأهداف الخمسة تبدو واقعية مع المقاومات في الطريق، المخاطر (المسافة للوقف، أي خبر مهم)، ومتى تعتبر الفكرة فاشلة.\n\n${entryMessage(r, { market })}\n\nآخر عناوين أخبار السهم (بالإنجليزي):\n${heads.join("\n") || "لا توجد"}\n\nحالة السوق:\n${market ? snapshotText(market) : "غير متاحة"}`,
@@ -390,7 +397,9 @@ export async function newsCheck() {
     if (!items.length) continue;
     for (const h of items) state.newsSeen[h.url] = Date.now();
     w.newsDay = ny().date;
-    const ar = await ai(`ترجم هذه الأخبار عن سهم ${code} (${w.en}) للعربي، ولكل خبر سطرين: العنوان مترجم، ثم خلاصة قصيرة وهل يبدو إيجابي أو سلبي أو محايد للسهم وليش. لا تضف معلومات غير موجودة.\n\n${items.map((h, k) => `${k + 1}. ${h.title}\n${h.summary || ""}\n(${h.source || ""})`).join("\n\n")}`, 2500, { cheap: true });
+    // the translation (tokens) only for your stocks: the followed ones and your trades; the rest in English
+    const yours = w.keep || trades.list("us").some((t) => t.mine && t.code === code);
+    const ar = !yours ? null : await ai(`ترجم هذه الأخبار عن سهم ${code} (${w.en}) للعربي، ولكل خبر سطرين: العنوان مترجم، ثم خلاصة قصيرة وهل يبدو إيجابي أو سلبي أو محايد للسهم وليش. لا تضف معلومات غير موجودة.\n\n${items.map((h, k) => `${k + 1}. ${h.title}\n${h.summary || ""}\n(${h.source || ""})`).join("\n\n")}`, 2500, { cheap: true });
     // the price now (or the last pre/after-market trade), so the news reads against the stock
     const q = (await nasdaqLiveQuotes([code], "stocks").catch(() => ({})))[code];
     const px = q?.price > 0 ? `💵 السعر الحين: ${q.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}$${Number.isFinite(q.changePct) ? ` (${q.changePct > 0 ? "+" : ""}${q.changePct.toFixed(1)}% اليوم)` : ""}` : "";
