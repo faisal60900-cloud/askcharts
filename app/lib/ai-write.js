@@ -69,7 +69,18 @@ let lean = true;
 // small model, about a third of the price; if it isn't there for this key, the usual model.
 export const CHEAP_MODEL = process.env.QT_CHEAP_MODEL || "claude-haiku-5-5";
 let cheapOk = true, cheapLean = true;
+// the switch: off, the bot spends no tokens at all (its signals and alerts go out without the AI's lines)
+export const aiOn = () => store.read("ai-settings", { on: true }).on !== false;
+export function setAiOn(on) {
+  store.write("ai-settings", { on: !!on });
+  return aiOn();
+}
+
 export async function write(system, prompt, { maxTokens = 900, fetchImpl = fetch, cheap = false } = {}) {
+  if (!aiOn()) {
+    lastError = "الذكاء الاصطناعي موقوف (أمر: الذكاء شغل)";
+    return null;
+  }
   const c = agentConfig();
   if (!c?.key || !c?.model) {
     lastError = "ما فيه مفتاح أو موديل في Settings, AskCharts AI";

@@ -222,6 +222,15 @@ export async function answer(text, chatId = "me") {
     const list = usflow.setFollow(off ? usflow.follow().filter((c) => c !== code) : [...usflow.follow(), code]);
     return off ? `✋ وقفت متابعة ${code}.\nالمتابعة الحين: ${list.join("، ") || "ولا سهم"}` : list.includes(code) ? `👀 أتابع ${code} عن قرب: أخباره، وكل 2% يتحرك وقت السوق، والسيولة غير العادية، وكل 3% قبل الافتتاح وبعد الإغلاق.\nالمتابعة الحين: ${list.join("، ")}` : `القائمة مليانة (15 سهم). وقّف متابعة سهم أول: الغ متابعة رمز`;
   }
+  // 🤖 the AI switch: off spends no tokens
+  const aiSw = t.replace(/^\//, "").trim().match(/^(?:الذكاء|الذكاء الاصطناعي|ai)\s*(شغل|تشغيل|on|وقف|ايقاف|إيقاف|off)?$/i);
+  if (aiSw) {
+    const m = await import("./ai-write.js");
+    if (aiSw[1]) m.setAiOn(/شغل|تشغيل|on/i.test(aiSw[1]));
+    return m.aiOn()
+      ? "🤖 الذكاء الاصطناعي شغال: رأي المحلل، وترجمة الأخبار، والملخصات، وكلام الفريق.\nتوقفه وما يصرف ولا توكن: الذكاء وقف"
+      : "⏸️ الذكاء الاصطناعي موقوف: البوت ما يصرف ولا توكن.\nالإشارات والأهداف والوقف وتنبيهات الفريق وربحك كلها توصلك عادي، بس بدون رأي المحلل وترجمة الأخبار والملخصات.\nترجعه: الذكاء شغل";
+  }
   // 📊 the AI meter
   if (/^\/?(?:الاستهلاك|استهلاك|التوكن|توكن|usage)$/i.test(t)) return (await import("./ai-write.js")).usageText();
   // 🕌 the Sharia filter: its state, on, off, or one stock's screen ("شرعي UBER")

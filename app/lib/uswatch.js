@@ -22,7 +22,8 @@ import { movers, checkTargets } from "./premovers.js";
 import { about, aboutLine } from "./about.js";
 
 // light: only the close summary of the day's reports (no pre-market brief, radar or after-open brief)
-const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true, prealerts: true };
+// minPrice / maxPrice: the recommendations only for stocks in this price range (dollars)
+const DEFAULTS = { on: false, every: 15, size: 300, minValue: 20e6, news: true, briefs: true, ai: true, light: true, prealerts: true, minPrice: 1, maxPrice: 200 };
 let cfg = { ...DEFAULTS, ...store.read("uswatch", {}) };
 let state = { sent: {}, newsSeen: {}, watched: {}, briefs: {}, lastRun: null, lastScanAt: 0, lastNewsAt: 0, lastEntries: [], near: [], lastError: null, ...store.read("uswatch-state", {}) };
 const saveState = () => store.write("uswatch-state", state);
@@ -60,6 +61,8 @@ export function due(m, flags = {}) {
   };
 }
 
+// a stock's price inside the recommendations' range
+export const priceOk = (p) => p > 0 && p >= (cfg.minPrice ?? 0) && p <= (cfg.maxPrice ?? Infinity);
 export const settings = () => ({ ...cfg, aiError: aiw.lastError, ny: ny(), telegram: kwwatch.settings().telegram, lastRun: state.lastRun, lastEntries: state.lastEntries, near: state.near, lastError: state.lastError, watched: Object.keys(state.watched), trades: trades.list("us"), briefsToday: state.briefs[ny().date] || {} });
 
 export function update(patch = {}) {
@@ -197,7 +200,7 @@ export async function runOnce({ force = false, list: only = null } = {}) {
     await Promise.all(Array.from({ length: 6 }, worker));
     const ok = rows.filter((r) => !r.error);
     // 🕌 each checked (lib/sharia.js): marked شرعي or غير شرعي, or left out in the filter mode
-    const entries = await sharia.keep(ok.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue), (r) => r.code);
+    const entries = await sharia.keep(ok.filter((r) => r.entry && (r.value ?? 0) >= cfg.minValue && priceOk(r.price)), (r) => r.code);
     const date = ny().date;
     const unsent = entries.filter((r) => force || !state.sent[`${r.code}|${date}`]);
 
@@ -254,7 +257,7 @@ export async function runOnce({ force = false, list: only = null } = {}) {
       .slice(0, 25)
       .map((r) => ({ code: r.code, en: r.en, close: r.price, level: r.breakout.level, dir: r.breakout.dir, stop: r.plan?.stop ?? null }));
     state.near = ok
-      .filter((r) => !r.entry && (r.value ?? 0) >= cfg.minValue)
+      .filter((r) => !r.entry && (r.value ?? 0) >= cfg.minValue && priceOk(r.price))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
       .map((r) => ({ code: r.code, en: r.en, price: r.price, breakout: r.breakout, inflow: r.flow?.inflowPct, vol: r.breakout?.vol ?? r.relVol, why: missing(r) }));

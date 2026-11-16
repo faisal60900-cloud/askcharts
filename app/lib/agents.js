@@ -158,7 +158,10 @@ async function insiders(ms = Date.now()) {
   const seen0 = new Set();
   const cand = rows.filter((r) => r.value >= 250e3 && r.date >= since && !seen0.has(r.code) && seen0.add(r.code)).sort((a, b) => b.value - a.value).slice(0, 15).map((r) => r.code);
   // 🕌 only the compliant ones (when the filter is on); the unchecked smaller ones are left out too
-  const listed = (await sharia.keep(cand, (c) => c)).slice(0, 10);
+  // only the stocks between $1 and $200 (lib/uswatch.js priceOk), by the insiders' price
+  const us = await import("./uswatch.js");
+  const priceOf = Object.fromEntries(rows.map((r) => [r.code, r.price]));
+  const listed = (await sharia.keep(cand.filter((c) => us.priceOk(priceOf[c])), (c) => c)).slice(0, 10);
   if (sharia.settings().on && sharia.settings().mode === "filter") {
     const okSet = new Set(listed);
     rows.splice(0, rows.length, ...rows.filter((r) => okSet.has(r.code)));
@@ -261,7 +264,7 @@ export function roleAr(title, who = "") {
 // ---------- 📈 المحلل الفني ----------
 async function tech() {
   const us = await import("./uswatch.js");
-  const near = (await sharia.keep(us.settings().near || [], (n) => n.code)).slice(0, 4);
+  const near = (await sharia.keep((us.settings().near || []).filter((n) => us.priceOk(n.price)), (n) => n.code)).slice(0, 4);
   if (!near.length) return `${head("tech")}\n\nما في أسهم قريبة من إشارة دخول كاملة الحين. أول ما يصير اختراق بسيولة، توصلك إشارة الدخول من مراقبة أمريكا.`;
   const reads = [];
   for (const n of near) {
@@ -292,7 +295,8 @@ async function earn(ms = Date.now(), phase = "post") {
   const rows = (await nasdaqEarnings(d.today).catch(() => [])).filter((r) => (pre ? r.when === "pre" : r.when !== "pre"));
   const mine = new Set(myCodes("us"));
   const big = rows.filter((r) => r.cap >= 5e9 || mine.has(r.code)).sort((a, b) => mine.has(b.code) - mine.has(a.code) || b.cap - a.cap).slice(0, 16);
-  const chosen = (await sharia.keep(big, (r) => r.code)).slice(0, 10);
+  const us = await import("./uswatch.js");
+  const chosen = (await sharia.keep(big.filter((r) => us.priceOk(r.price) || mine.has(r.code)), (r) => r.code)).slice(0, 10);
   if (!chosen.length) return `${head("earn")}\n\nما في شركات كبيرة أعلنت نتائجها ${pre ? "الصبح قبل الافتتاح" : "الليلة"}.`;
   const quotes = await nasdaqLiveQuotes(chosen.map((r) => r.code), "stocks").catch(() => ({}));
   const out = [];
@@ -387,7 +391,8 @@ async function momentum() {
       }
     }),
   );
-  const top = (await sharia.keep(found.sort((a, b) => b.score - a.score).slice(0, 10), (r) => r.code)).slice(0, 5);
+  const us = await import("./uswatch.js");
+  const top = (await sharia.keep(found.filter((r) => us.priceOk(r.entry)).sort((a, b) => b.score - a.score).slice(0, 10), (r) => r.code)).slice(0, 5);
   for (const r of top) pick("momentum", r.code, { price: r.entry, stop: r.stop, t1: r.targets[0], targets: r.targets.slice(0, 3), entry: r.entry });
   return momentumText(top, await activities(top.map((r) => r.code)));
 }
