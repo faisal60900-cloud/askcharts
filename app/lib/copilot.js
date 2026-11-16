@@ -248,6 +248,18 @@ export async function chat(input, res, fetchImpl = fetch) {
 export async function readEvents(stream, on) {
   const dec = new TextDecoder();
   let buf = "";
+  // the AI meter (lib/ai-write.js): the tokens of the in-app chat
+  const use = { input_tokens: 0, output_tokens: 0 };
+  const on0 = on;
+  on = (type, obj) => {
+    const u = obj?.message?.usage || obj?.usage;
+    if (u) {
+      if (type === "message_start") use.input_tokens += (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + Math.round((u.cache_read_input_tokens || 0) / 10);
+      else if (type === "message_delta") use.output_tokens = Math.max(use.output_tokens, u.output_tokens || 0);
+      else if (u.prompt_tokens != null) Object.assign(use, { input_tokens: u.prompt_tokens, output_tokens: u.completion_tokens || 0 });
+    }
+    return on0(type, obj);
+  };
   const flush = (block) => {
     let type = "",
       data = "";
@@ -273,4 +285,5 @@ export async function readEvents(stream, on) {
     }
   }
   if (buf.trim()) flush(buf);
+  if (use.input_tokens || use.output_tokens) import("./ai-write.js").then((m) => m.meter("app-chat", use)).catch(() => {});
 }

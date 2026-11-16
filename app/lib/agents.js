@@ -192,7 +192,7 @@ export async function activities(codes, { writeImpl = write } = {}) {
     const rows = await nasdaqScreener("stocks").catch(() => []);
     const meta = Object.fromEntries(rows.map((r) => [r.ticker, r]));
     const list = need.map((c) => `${c}: ${meta[c]?.name || ""} (${meta[c]?.industry || meta[c]?.sector || ""})`).join("\n");
-    const text = await writeImpl("أنت تكتب بالعربي البسيط لمتداول كويتي.", `لكل شركة أمريكية تحت، اكتب نشاطها بالعربي في 3 إلى 6 كلمات (مثل: «صناعة رقائق الذكاء الاصطناعي» أو «تطبيق توصيل ومشاوير»). رجّع JSON بس، بدون شرح: {"الرمز": "النشاط"}\n\n${list}`, { maxTokens: 6000 }).catch(() => null);
+    const text = await writeImpl("أنت تكتب بالعربي البسيط لمتداول كويتي.", `لكل شركة أمريكية تحت، اكتب نشاطها بالعربي في 3 إلى 6 كلمات (مثل: «صناعة رقائق الذكاء الاصطناعي» أو «تطبيق توصيل ومشاوير»). رجّع JSON بس، بدون شرح: {"الرمز": "النشاط"}\n\n${list}`, { maxTokens: 6000, cheap: true }).catch(() => null);
     let got = {};
     try {
       got = JSON.parse(String(text || "").match(/\{[\s\S]*\}/)?.[0] || "{}");

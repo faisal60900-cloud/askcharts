@@ -69,7 +69,7 @@ export async function about(stock, market = "us", { ai = true } = {}) {
   const text = await write(
     "تكتب وصف قصير ودقيق لنشاط شركة مدرجة، بالعربي الخليجي البسيط، سطر واحد بس (15 كلمة أو أقل): وش تبيع أو تقدم ومن وين دخلها. بدون أرقام وبدون رأي. إذا ما تعرف الشركة بالتحديد اكتب بس: غير معروف",
     `الشركة: ${name}\nالرمز: ${code}\nالسوق: ${where}\nالقطاع: ${sector || "—"}\nالصناعة: ${industry || "—"}${stock.ar ? `\nالاسم العربي: ${stock.ar}` : ""}`,
-    { maxTokens: 800 },
+    { maxTokens: 800, cheap: true },
   ).catch(() => null);
   // the AI not reachable and nothing else known: try again next time
   if (text == null && !sector && !industry) return "";
