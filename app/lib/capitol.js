@@ -1,6 +1,6 @@
 // 🏛️ US politicians' stock trades (members of Congress, from their STOCK Act filings), through
-// Bargo's free Congress Trades API (keyless: 30 calls and 100 rows a day per address, so it is
-// read every 2 hours at most). The fields are read by name loosely, since the API's own names
+// Bargo's free Congress Trades API (keyless: 100 rows a day per address, so it is read once a
+// weekday, the latest filings). The fields are read by name loosely, since the API's own names
 // aren't documented in one place.
 const API = "https://www.bargo.ai/free-apis/congress/v1/trades";
 

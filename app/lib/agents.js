@@ -633,7 +633,7 @@ async function liveInsiders(send, ms = Date.now()) {
 
 // ---------- 🏛️ خالد: members of Congress buying (their STOCK Act filings) ----------
 // A new filed purchase of a listed stock, $50,000 or more at the top of its range, from the last
-// 15 days of filings; each once. The first look only learns what's there.
+// 15 days of filings; each once. The first look only learns what's there. Once a day (lib/capitol.js).
 const CHAMBER = { house: "مجلس النواب", senate: "مجلس الشيوخ" };
 const money0 = (v) => (v >= 1e6 ? `${n2(v / 1e6, 1)} مليون$` : `${n2(v / 1e3, 0)} ألف$`);
 export function capitolText(r, { act = "", price = null, tag = "" } = {}) {
@@ -988,10 +988,13 @@ async function tick() {
     st.insAt = Date.now();
     await liveInsiders(tg).catch(() => {});
   }
-  // 🏛️ Congress buys: every 2 hours on weekdays (the free API allows 30 calls a day)
-  if (st.on.insiders && work && nyMin >= 8 * 60 && nyMin < 20 * 60 && Date.now() - (st.capAt || 0) >= 120 * 60e3) {
+  // 🏛️ Congress buys: once a weekday at 11:00 New York (the free API gives 100 rows a day per
+  // address, the latest filings; the House posts them through the day). Retried hourly till it answers.
+  const nyDay0 = `${n.year}-${n.month}-${n.day}`;
+  if (st.on.insiders && work && nyMin >= 11 * 60 && st.capDay !== nyDay0 && Date.now() - (st.capAt || 0) >= 60 * 60e3) {
     st.capAt = Date.now();
-    await liveCapitol(tg).catch(() => {});
+    if (await liveCapitol(tg).then(() => true).catch(() => false)) st.capDay = nyDay0;
+    save();
   }
   const old = new Date(Date.now() - 10 * 86400e3).toISOString().slice(0, 10);
   for (const k of Object.keys(st.sent)) if (k.split("|")[1] < old) delete st.sent[k];
