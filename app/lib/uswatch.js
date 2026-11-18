@@ -255,7 +255,7 @@ export async function runOnce({ force = false, list: only = null } = {}) {
     // 👀 the warnings before a breakout, in the session only
     const t = ny();
     if (cfg.prealerts && t.weekday && t.min >= 9 * 60 + 30 && t.min < 16 * 60)
-      await prealert.sendNew(ok, "us", { minValue: cfg.minValue, date, sent: (state.pre ||= {}), send: (text, r) => send(text, { symbol: r.symbol, name: "" }) });
+      await prealert.sendNew(ok.filter((r) => priceOk(r.price)), "us", { minValue: cfg.minValue, date, sent: (state.pre ||= {}), send: (text, r) => send(text, { symbol: r.symbol, name: "" }) });
     state.lastEntries = entries.map((r) => r.code);
     // the stocks to look at before tomorrow's open: near a breakout or just through one
     state.radar = ok
@@ -399,9 +399,12 @@ export async function newsCheck() {
     w.newsDay = ny().date;
     // the translation (tokens) only for your stocks: the followed ones and your trades; the rest in English
     const yours = w.keep || trades.list("us").some((t) => t.mine && t.code === code);
+    // a stock outside the $1–$200 range: no news, unless it's yours
+    const q0 = (await nasdaqLiveQuotes([code], "stocks").catch(() => ({})))[code];
+    if (!yours && q0?.price > 0 && !priceOk(q0.price)) continue;
     const ar = !yours ? null : await ai(`ترجم هذه الأخبار عن سهم ${code} (${w.en}) للعربي، ولكل خبر سطرين: العنوان مترجم، ثم خلاصة قصيرة وهل يبدو إيجابي أو سلبي أو محايد للسهم وليش. لا تضف معلومات غير موجودة.\n\n${items.map((h, k) => `${k + 1}. ${h.title}\n${h.summary || ""}\n(${h.source || ""})`).join("\n\n")}`, 2500, { cheap: true });
     // the price now (or the last pre/after-market trade), so the news reads against the stock
-    const q = (await nasdaqLiveQuotes([code], "stocks").catch(() => ({})))[code];
+    const q = q0;
     const px = q?.price > 0 ? `💵 السعر الحين: ${q.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}$${Number.isFinite(q.changePct) ? ` (${q.changePct > 0 ? "+" : ""}${q.changePct.toFixed(1)}% اليوم)` : ""}` : "";
     await sharia.keep([code], (c) => c).catch(() => {});
     await send([`📰 أخبار ${code} (${w.en})${sharia.tag(code) ? ` · ${sharia.tag(code)}` : ""}`, px, ar || items.map((h) => `• ${h.title}`).join("\n"), items.map((h) => h.url).join("\n")].filter(Boolean).join("\n\n"), { symbol: w.symbol, name: "" });
@@ -466,7 +469,7 @@ async function tick() {
     // the fallen leaders: a turn up or a new low, every 5 minutes from 10:00
     if (mk.open && m.min >= 10 * 60 && Date.now() - (state.lastWatchAt || 0) >= 5 * 60e3) {
       state.lastWatchAt = Date.now();
-      await watchlist.check((text, code) => send(text, { symbol: `US:${code}`, name: "" }), m.date, (code) => about({ code, en: code }, "us"));
+      await watchlist.check((text, code) => send(text, { symbol: `US:${code}`, name: "" }), m.date, (code) => about({ code, en: code }, "us"), priceOk);
     }
     // unusual money in your US stocks (lib/usflow.js): every 3 minutes in the session
     if (mk.open && Date.now() - (state.lastFlowAt || 0) >= 3 * 60e3) {

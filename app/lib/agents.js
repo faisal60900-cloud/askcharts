@@ -595,7 +595,8 @@ async function liveInsiders(send, ms = Date.now()) {
   const fresh = bigInsiderNew(rows, st.seenIns, { since: new Date(ms - 3 * 86400e3).toISOString().slice(0, 10) });
   save();
   if (first) return 0;
-  const kept = await sharia.keep(fresh, (r) => r.code);
+  const usw = await import("./uswatch.js");
+  const kept = await sharia.keep(fresh.filter((r) => usw.priceOk(r.price)), (r) => r.code);
   fresh.splice(0, fresh.length, ...kept);
   const acts = await activities(fresh.map((r) => r.code));
   for (const r of fresh) {

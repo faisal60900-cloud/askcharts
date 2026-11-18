@@ -106,6 +106,16 @@ export async function movers({ size = 1000, ms = Date.now() } = {}) {
     tonight: today.filter((r) => r.when === "post"),
     tomorrow: next.filter((r) => r.when === "pre"),
   };
+  // only the stocks between $1 and $200 (lib/uswatch.js priceOk), your own ones kept
+  {
+    const { priceOk } = await import("./uswatch.js");
+    const mine1 = new Set(mine);
+    const pOf = (c) => quotes[c]?.price ?? rows.find((r) => r.ticker === c)?.price;
+    rows = rows.filter((r) => priceOk(pOf(r.ticker)) || mine1.has(r.ticker));
+    const inRange = (r) => mine1.has(r.code) || !(pOf(r.code) > 0) || priceOk(pOf(r.code));
+    earn.tonight = earn.tonight.filter(inRange);
+    earn.tomorrow = earn.tomorrow.filter(inRange);
+  }
   // 🕌 the non-compliant movers and reporters are left out (lib/sharia.js), when the filter is on
   if (sharia.settings().on) {
     const mineSet0 = new Set(mine);

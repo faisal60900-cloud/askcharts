@@ -68,12 +68,13 @@ export function message(code, e, company = "") {
 }
 
 // One look at every stock in the list; send(text, code) delivers.
-export async function check(send, date, companyOf = async () => "") {
+// priceOk(price): only the stocks in the recommendations' price range ($1–$200)
+export async function check(send, date, companyOf = async () => "", priceOk = () => true) {
   let n = 0;
   for (const code of st.codes) {
     const bars = await getCandles(`US:${code}`, "1D", 300).then((r) => r.candles || []).catch(() => []);
     const e = evaluate(bars);
-    if (!e) continue;
+    if (!e || !priceOk(bars.at(-1)?.close)) continue;
     const k = `${code}|${e.kind}|${date}`;
     if (st.sent[k]) continue;
     st.sent[k] = Date.now();
