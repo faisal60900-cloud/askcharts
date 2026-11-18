@@ -110,8 +110,9 @@ test("the hiring announcement names the team", () => {
 });
 
 test("the HR review is due Friday after the US close", () => {
-  assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 35), {}).map((x) => x[0]), ["hr"]);
-  assert.deepEqual(due(Date.UTC(2026, 10, 5, 21, 35), {}).map((x) => x[0]), []);
+  // (the day's scorecard runs 16:20–16:40 New York, every weekday)
+  assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 35), {}).map((x) => x[0]), ["score", "hr"]);
+  assert.deepEqual(due(Date.UTC(2026, 10, 5, 21, 35), {}).map((x) => x[0]), ["score"]);
 });
 
 test("HR lets an analyst go: six closed picks, under 40% at the first target, losing on average", () => {
@@ -281,4 +282,19 @@ test("your own position, privately: every 1% step, with the profit in dollars an
   assert.match(at(69.5, 1.4)[0], /📉 UBER[^\n]*\n[^\n]*نزل 1\.1%/);
   // a new day starts over
   assert.equal(mineMoveEvents(list, { UBER: { price: 75 } }, mem, { day: "2026-11-10" }).length, 0);
+});
+
+test("the day's scorecard: each analyst's wins, stops and record, and today's hits", async () => {
+  const { scoreText } = await import("../lib/agents.js");
+  const t = scoreText([
+    { agent: "momentum", code: "AAA", res: "win", at: "2026-11-18", move: 4.2 },
+    { agent: "momentum", code: "BBB", res: "loss", at: "2026-11-17" },
+    { agent: "tech", code: "CCC", res: "open" },
+    { agent: "tech", code: "DDD", res: "none" },
+  ], { today: "2026-11-18" });
+  assert.match(t, /🏆 الفريق كله: 1 نجحت من 2 انتهت = 50%/);
+  assert.match(t, /🚀 سعود \(محلل الزخم\): 2 توصية\n   ✅ 1 حققت الهدف · ❌ 1 ضربت الوقف · ⚪ 0 بدون نتيجة · ⏳ 0 شغالة · ⛔ 0 ما دخلت\n   📈 نسبة النجاح: 50% \(1 من 2\)/);
+  assert.match(t, /📈 سالم[^\n]*: 2 توصية\n   ✅ 0[^\n]*⏳ 1 شغالة · ⛔ 1 ما دخلت/);
+  assert.match(t, /🔔 اليوم:\n🎯 AAA \(سعود\) وصل الهدف الأول · الحين \+4\.2% من الدخول/);
+  assert.doesNotMatch(t, /BBB \(سعود\) ضرب/);
 });

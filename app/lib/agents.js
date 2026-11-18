@@ -15,6 +15,7 @@ import * as trades from "./trades.js";
 import * as usflow from "./usflow.js";
 import * as kwwatch from "./kwwatch.js";
 import * as sharia from "./sharia.js";
+import * as learn from "./learn.js";
 import { write, ANALYST } from "./ai-write.js";
 import { nasdaqEarnings, nasdaqSurprise, nasdaqLiveQuotes, getCandles, nasdaqScreener } from "./providers.js";
 import { news as newsOf } from "./market-info.js";
@@ -264,7 +265,14 @@ export function roleAr(title, who = "") {
 // ---------- 📈 المحلل الفني ----------
 async function tech() {
   const us = await import("./uswatch.js");
-  const near = (await sharia.keep((us.settings().near || []).filter((n) => us.priceOk(n.price)), (n) => n.code)).slice(0, 4);
+  const near0 = (await sharia.keep((us.settings().near || []).filter((n) => us.priceOk(n.price)), (n) => n.code)).slice(0, 6);
+  // 🎓 what سالم learned: the odds of each stock's kind of setup, the weak kinds left out
+  const odds = {};
+  for (const n of near0) {
+    const b = (await getCandles(`US:${n.code}`, "1D", 260).catch(() => ({ candles: [] }))).candles || [];
+    odds[n.code] = learn.odds("tech", learn.features(b, b.length - 1));
+  }
+  const near = near0.filter((n) => !weak(odds[n.code])).slice(0, 4);
   if (!near.length) return `${head("tech")}\n\nما في أسهم قريبة من إشارة دخول كاملة الحين. أول ما يصير اختراق بسيولة، توصلك إشارة الدخول من مراقبة أمريكا.`;
   const reads = [];
   for (const n of near) {
@@ -281,7 +289,7 @@ async function tech() {
   return [
     head("tech"),
     "أقرب الأسهم لإشارة دخول كاملة:",
-    reads.map((r) => { const L = levelsOf(r.full); const px = Number((r.full.match(/السعر الآن: ([\d.,]+)\$ \(([-+\d.]+)%/) || [])[1]?.replace(/,/g, "")); const chg = Number((r.full.match(/السعر الآن: [\d.,]+\$ \(([-+\d.]+)%/) || [])[1]); return stockBlock(r.code, { act: acts[r.code], price: px, chg, lo: L.lo, hi: L.hi, stop: L.stop, targets: L.targets, note: `⏳ ناقصه: ${r.why}` }); }).join("\n\n"),
+    reads.map((r) => { const L = levelsOf(r.full); const px = Number((r.full.match(/السعر الآن: ([\d.,]+)\$ \(([-+\d.]+)%/) || [])[1]?.replace(/,/g, "")); const chg = Number((r.full.match(/السعر الآن: [\d.,]+\$ \(([-+\d.]+)%/) || [])[1]); return stockBlock(r.code, { act: acts[r.code], price: px, chg, lo: L.lo, hi: L.hi, stop: L.stop, targets: L.targets, note: [`⏳ ناقصه: ${r.why}`, oddsLine(odds[r.code])].filter(Boolean).join("\n   ") }); }).join("\n\n"),
     view ? `🧠 رأي المحلل:\n${view}` : "",
     reads.find((r) => r.record)?.record || "",
     "تحليل، مو توصية. الإشارة الكاملة توصلك أول ما تتحقق كل الشروط.",
@@ -314,7 +322,7 @@ async function earn(ms = Date.now(), phase = "post") {
     const { price: _, ...L } = await levels(r.code, r.price);
     Object.assign(r, L);
     // with its levels, so the bot follows its targets and stop like the analysts'
-    if (r.price > 0 && L.stop > 0 && L.targets?.length) pick("earn", r.code, { price: r.price, stop: L.stop, t1: L.targets[0], targets: L.targets.slice(0, 3), ...(L.fresh || !(L.lo && L.hi) ? { entry: r.price } : { lo: L.lo, hi: L.hi }) });
+    if (r.price > 0 && L.stop > 0 && L.targets?.length) pick("earn", r.code, { price: r.price, stop: L.stop, t1: L.targets[0], targets: L.targets.slice(0, 3), post: !pre, ...(L.fresh || !(L.lo && L.hi) ? { entry: r.price } : { lo: L.lo, hi: L.hi }) });
   }
   return [
     head("earn"),
@@ -364,14 +372,15 @@ export function momentumRow(code, b) {
   return { code, price: t.close, chg, rel, buy: Math.round(pos * 100), rsi: Math.round(rsi), entry, stop, targets: [1, 2, 3].map((k) => +(entry + k * r).toFixed(2)), score: rel * (pos + 0.5) };
 }
 
-export function momentumText(rows, acts = {}) {
+export function momentumText(rows, acts = {}, { skipped = 0 } = {}) {
   if (!rows.length) return `${head("momentum")}\n\nما في سهم كبير اخترق أمس بكل الشروط (سيولة 1.5 ضعف، وإغلاق قرب القمة، وفوق متوسط 50 و200 يوم، وRSI بين 50 و72). أحيانًا الأفضل ما تدخل.`;
   return [
     head("momentum"),
     "أقوى اختراقات أمس (من أكبر 300 سهم أمريكي):",
-    rows.map((r) => stockBlock(r.code, { act: acts[r.code], price: r.price, chg: r.chg, entry: r.entry, stop: r.stop, targets: r.targets, note: `📊 سيولة ${n2(r.rel, 1)} ضعف · شراء ${r.buy}% · RSI ${r.rsi}` })).join("\n\n"),
+    rows.map((r) => stockBlock(r.code, { act: acts[r.code], price: r.price, chg: r.chg, entry: r.entry, stop: r.stop, targets: r.targets, note: [`📊 سيولة ${n2(r.rel, 1)} ضعف · شراء ${r.buy}% · RSI ${r.rsi}`, oddsLine(r.odds)].filter(Boolean).join("\n   ") })).join("\n\n"),
+    skipped > 0 ? `🎓 تجاهلت ${skipped} ${skipped === 1 ? "سهم" : "أسهم"} من نوع إعداد نجاحه تاريخيًا ضعيف.` : "",
     "الدخول بس لو السعر عدّى قمة أمس بعد الافتتاح، وانتظر أول 15 دقيقة. تحليل، مو توصية.",
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
 
 async function momentum() {
@@ -380,21 +389,35 @@ async function momentum() {
     .sort((a, b) => b.price * b.volume - a.price * a.volume)
     .slice(0, 300);
   const found = [];
+  const series = [];
   const q = rows.map((r) => r.ticker);
   await Promise.all(
     Array.from({ length: 6 }, async () => {
       while (q.length) {
         const c = q.shift();
-        const b = (await getCandles(`US:${c}`, "1D", 260).catch(() => ({ candles: [] }))).candles;
+        // 460 days: the setup needs 200, so a year of history to learn from
+        const b = (await getCandles(`US:${c}`, "1D", 460).catch(() => ({ candles: [] }))).candles;
+        if (b?.length) series.push(b);
         const r = momentumRow(c, b);
-        if (r) found.push(r);
+        if (r) found.push({ ...r, f: learn.features(b, b.length - 1) });
       }
     }),
   );
+  // 🎓 سعود learns his setup from the last year of these 300 stocks (once a day): what happened
+  // every time it showed, so today's picks lean on the kinds that worked
+  const today = nyDates().today;
+  if (learn.state().backAt !== today && series.length) {
+    learn.backfill("momentum", series, (b, i) => {
+      const r = momentumRow("", b.slice(0, i + 1));
+      return r && { entry: r.entry, stop: r.stop, t1: r.targets[0] };
+    }, { at: today });
+  }
+  for (const r of found) r.odds = learn.odds("momentum", r.f);
   const us = await import("./uswatch.js");
-  const top = (await sharia.keep(found.filter((r) => us.priceOk(r.entry)).sort((a, b) => b.score - a.score).slice(0, 10), (r) => r.code)).slice(0, 5);
+  const ranked = found.filter((r) => us.priceOk(r.entry) && !weak(r.odds)).sort((a, b) => (b.odds?.rate ?? 0.5) - (a.odds?.rate ?? 0.5) || b.score - a.score);
+  const top = (await sharia.keep(ranked.slice(0, 10), (r) => r.code)).slice(0, 5);
   for (const r of top) pick("momentum", r.code, { price: r.entry, stop: r.stop, t1: r.targets[0], targets: r.targets.slice(0, 3), entry: r.entry });
-  return momentumText(top, await activities(top.map((r) => r.code)));
+  return momentumText(top, await activities(top.map((r) => r.code)), { skipped: found.filter((r) => weak(r.odds)).length });
 }
 
 // ---------- 🔔 متابعة توصيات اليوم: عند الافتتاح وبعد الإغلاق ----------
@@ -737,9 +760,57 @@ export async function run(name, ms = Date.now()) {
   if (name === "close") return follow("close", ms);
   if (name === "kw") return kw();
   if (name === "hr") return hr();
+  if (name === "score") return scorecard(ms);
   if (name === "intro") return introText();
   if (name === "kickoff") return kickoffText();
   throw new Error(`ما أعرف الوكيل ${name}`);
+}
+
+// ---------- 🎓 the learned odds, and the day's scorecard ----------
+// a kind of setup that, with 30 or more past cases, reached its first target less than 40% of the time
+export const weak = (o) => !!o && o.n >= 30 && o.rate < 0.4;
+export const oddsLine = (o) => (o ? `🎓 نجاح هالنوع تاريخيًا: ${Math.round(o.rate * 100)}% (من ${o.n} مرة)` : "");
+
+const AG_SCORED = ["tech", "momentum", "insiders", "earn"];
+// The day's report: each analyst's picks of the last 5 business days, how many reached the first
+// target, hit the stop, did neither, are still running, or never triggered; today's hits; and the
+// learned record. rows: from learn.score.
+export function scoreText(rows, { today } = {}) {
+  const by = Object.fromEntries(AG_SCORED.map((k) => [k, rows.filter((r) => r.agent === k)]));
+  const cnt = (list, res) => list.filter((r) => r.res === res).length;
+  const lines = [];
+  let W = 0, L = 0, F = 0;
+  for (const k of AG_SCORED) {
+    const list = by[k];
+    if (!list.length) continue;
+    const w = cnt(list, "win"), l = cnt(list, "loss"), f = cnt(list, "flat"), o = cnt(list, "open"), none = cnt(list, "none");
+    W += w; L += l; F += f;
+    const done = w + l + f;
+    const a = AGENTS[k];
+    lines.push(`${a.icon} ${a.name} (${a.ar}): ${list.length} توصية\n   ✅ ${w} حققت الهدف · ❌ ${l} ضربت الوقف · ⚪ ${f} بدون نتيجة · ⏳ ${o} شغالة · ⛔ ${none} ما دخلت${done ? `\n   📈 نسبة النجاح: ${Math.round((w / done) * 100)}% (${w} من ${done})` : ""}`);
+  }
+  if (!lines.length) return `📊 حصاد اليوم\n\nما في توصيات من الفريق آخر 5 أيام.`;
+  const hits = rows.filter((r) => r.at === today && (r.res === "win" || r.res === "loss"));
+  const done = W + L + F;
+  const learned = AG_SCORED.map((k) => ({ k, r: learn.record(k) })).filter((x) => x.r.n);
+  const back = learn.backRecord("momentum");
+  return [
+    `📊 حصاد اليوم: نتائج توصيات الفريق (آخر 5 أيام عمل)`,
+    done ? `🏆 الفريق كله: ${W} نجحت من ${done} انتهت = ${Math.round((W / done) * 100)}%` : "",
+    lines.join("\n\n"),
+    hits.length ? `🔔 اليوم:\n${hits.map((r) => `${r.res === "win" ? "🎯" : "🛑"} ${r.code} (${AGENTS[r.agent].name}) ${r.res === "win" ? "وصل الهدف الأول" : "ضرب الوقف"}${r.move != null ? ` · الحين ${r.move >= 0 ? "+" : ""}${n2(r.move, 1)}% من الدخول` : ""}`).join("\n")}` : "",
+    learned.length || back ? `🎓 اللي تعلمه الفريق:\n${[...learned.map(({ k, r }) => `• ${AGENTS[k].name}: ${Math.round(r.rate * 100)}% من ${r.n} توصية انتهت`), back ? `• سعود اختبر إعداده على سنة كاملة: ${Math.round(back.rate * 100)}% من ${back.n} مرة` : ""].filter(Boolean).join("\n")}\nكل توصية جديدة تنحسب، ونوع الإعداد اللي نجاحه أقل من 40% يتجاهلونه.` : "",
+    "النجاح = وصل الهدف الأول قبل الوقف خلال 5 أيام. تحليل، مو ضمان.",
+  ].filter(Boolean).join("\n\n");
+}
+
+async function scorecard(ms = Date.now()) {
+  const today = nyDates(ms).today;
+  const from = new Date(Date.parse(`${today}T12:00:00Z`) - 9 * 86400e3).toISOString().slice(0, 10);
+  const picks = st.picks.filter((p) => AG_SCORED.includes(p.agent) && p.day >= from && p.stop > 0 && p.t1 > 0);
+  const bars = {};
+  for (const c of [...new Set(picks.map((p) => p.code))]) bars[c] = (await getCandles(`US:${c}`, "1D", 260).catch(() => ({ candles: [] }))).candles || [];
+  return scoreText(learn.score(picks, bars, { today }), { today });
 }
 
 // ---------- the clock ----------
@@ -765,6 +836,8 @@ export function due(ms = Date.now(), sent = st.sent) {
   if (nyWork && win(nyMin, 16 * 60 + 5) && !sent[`close|${nyDay}`]) out.push(["close", nyDay]);
   if (nyWork && win(nyMin, 16 * 60 + 10) && !sent[`risk|${nyDay}`]) out.push(["risk", nyDay]);
   if (nyWork && win(nyMin, 16 * 60 + 45, 30) && !sent[`earn|${nyDay}`]) out.push(["earn", nyDay]);
+  // the day's scorecard, after the close
+  if (nyWork && win(nyMin, 16 * 60 + 20) && !sent[`score|${nyDay}`]) out.push(["score", nyDay]);
   if (kwWork && win(kwMin, 10 * 60 + 30) && !sent[`kw|${kwDay}`]) out.push(["kw", kwDay]);
   // the weekly review: Friday after the US close
   if (n.weekday === "Fri" && win(nyMin, 16 * 60 + 30) && !sent[`hr|${nyDay}`]) out.push(["hr", nyDay]);
