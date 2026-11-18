@@ -84,3 +84,18 @@ test("the coming week: each day's reporters, their last two quarters, and the ch
   assert.match(t, /📆 الاثنين 2026-11-23:\n• AAA · برامج · 🕌 شرعي\n   ⏰ بعد الإغلاق · 💵 50\$\n   📊 آخر ربعين: 1\.2\$ مقابل توقع 1\$ ✅ · 0\.9\$ مقابل توقع 1\$ ❌\n   🟡 محايد/);
   assert.doesNotMatch(t, /الثلاثاء/);
 });
+
+test("the lessons: the best and worst kinds in words, and the bar each analyst raises", async () => {
+  const st = { back: { momentum: { all: { w: 50, l: 40, f: 10 }, "vol:2.5+": { w: 20, l: 5, f: 0 }, "rsi:70+": { w: 3, l: 14, f: 3 }, "trend:up": { w: 30, l: 20, f: 5 } } }, live: {}, days: {} };
+  const L = learn.lessons("momentum", st, { top: 1 });
+  assert.equal(L.rate, 0.5);
+  assert.equal(L.best[0].label, "سيولة أكثر من 2.5 ضعف");
+  assert.equal(L.worst[0].label, "RSI فوق 70 (تشبع شراء)");
+  const { lessonsText, weak } = await import("../lib/agents.js");
+  const t = lessonsText({ momentum: L });
+  assert.match(t, /🚀 سعود \(محلل الزخم\): نجاحه 50% من 100 توصية\n   ✅ أحسن شي له: سيولة أكثر من 2\.5 ضعف \(80%\)\n   ❌ يتجنب: RSI فوق 70 \(تشبع شراء\) \(15%\)/);
+  // the bar: 40%, or the analyst's own average when higher
+  assert.equal(weak({ rate: 0.45, n: 40 }), false);
+  assert.equal(weak({ rate: 0.45, n: 40 }, 0.5), true);
+  assert.equal(weak({ rate: 0.2, n: 10 }, 0.5), false);
+});

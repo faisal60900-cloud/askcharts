@@ -173,3 +173,28 @@ export const backRecord = (agent, s = st) => {
   const r = s.back[agent]?.all;
   return r ? { ...r, n: n(r), rate: rate(r) } : null;
 };
+
+// ---------- what each analyst learned, in words ----------
+const LABEL = {
+  rsi: { "<35": "RSI تحت 35 (تشبع بيع)", "35-50": "RSI بين 35 و50", "50-60": "RSI بين 50 و60", "60-70": "RSI بين 60 و70", "70+": "RSI فوق 70 (تشبع شراء)" },
+  vol: { "<1": "سيولة أقل من المعدل", "1-1.5": "سيولة عادية", "1.5-2.5": "سيولة 1.5–2.5 ضعف", "2.5+": "سيولة أكثر من 2.5 ضعف" },
+  close: { low: "إغلاق قرب قاع اليوم", mid: "إغلاق نص النطاق", high: "إغلاق قرب قمة اليوم" },
+  day: { "<-3": "يوم نازل أكثر من 3%", "-3-0": "يوم نازل شوي", "0-3": "يوم طالع لين 3%", "3-6": "يوم طالع 3–6%", "6+": "يوم طالع أكثر من 6%" },
+  trend: { up: "اتجاه صاعد (فوق متوسط 50 و200)", down: "اتجاه هابط (تحت المتوسطين)", mixed: "اتجاه مختلط" },
+  "5d": { "<-5": "نازل أكثر من 5% بأسبوع", "-5-0": "نازل شوي بأسبوع", "0-5": "طالع لين 5% بأسبوع", "5-10": "طالع 5–10% بأسبوع", "10+": "طالع أكثر من 10% بأسبوع" },
+};
+export const labelOf = (k) => {
+  const [g, v] = k.split(":");
+  return LABEL[g]?.[v] || k;
+};
+// The agent's whole record (history and live) and its best and worst kinds: each with 15 or more cases.
+export function lessons(agent, s = st, { min = 15, top = 3 } = {}) {
+  const tbls = [s.back[agent], s.live[agent]].filter(Boolean);
+  if (!tbls.length) return null;
+  const keys = new Set(tbls.flatMap((t) => Object.keys(t)));
+  const merged = (k) => tbls.reduce((m, t) => (t[k] ? { w: m.w + t[k].w, l: m.l + t[k].l, f: m.f + t[k].f } : m), { w: 0, l: 0, f: 0 });
+  const all = merged("all");
+  const rows = [...keys].filter((k) => k !== "all").map((k) => ({ k, r: merged(k) })).filter((x) => n(x.r) >= min).map((x) => ({ k: x.k, label: labelOf(x.k), rate: rate(x.r), n: n(x.r) }));
+  rows.sort((a, b) => b.rate - a.rate);
+  return { rate: rate(all), n: n(all), best: rows.slice(0, top), worst: rows.slice(-top).reverse().filter((x) => !rows.slice(0, top).includes(x)) };
+}

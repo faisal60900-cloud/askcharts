@@ -273,7 +273,7 @@ async function tech() {
     const b = (await getCandles(`US:${n.code}`, "1D", 260).catch(() => ({ candles: [] }))).candles || [];
     odds[n.code] = learn.odds("tech", learn.features(b, b.length - 1));
   }
-  const near = near0.filter((n) => !weak(odds[n.code])).slice(0, 4);
+  const near = near0.filter((n) => !weak(odds[n.code], baseOf("tech"))).slice(0, 4);
   if (!near.length) return `${head("tech")}\n\nما في أسهم قريبة من إشارة دخول كاملة الحين. أول ما يصير اختراق بسيولة، توصلك إشارة الدخول من مراقبة أمريكا.`;
   const reads = [];
   for (const n of near) {
@@ -415,10 +415,11 @@ async function momentum() {
   }
   for (const r of found) r.odds = learn.odds("momentum", r.f);
   const us = await import("./uswatch.js");
-  const ranked = found.filter((r) => us.priceOk(r.entry) && !weak(r.odds)).sort((a, b) => (b.odds?.rate ?? 0.5) - (a.odds?.rate ?? 0.5) || b.score - a.score);
+  const base = baseOf("momentum");
+  const ranked = found.filter((r) => us.priceOk(r.entry) && !weak(r.odds, base)).sort((a, b) => (b.odds?.rate ?? 0.5) - (a.odds?.rate ?? 0.5) || b.score - a.score);
   const top = (await sharia.keep(ranked.slice(0, 10), (r) => r.code)).slice(0, 5);
   for (const r of top) pick("momentum", r.code, { price: r.entry, stop: r.stop, t1: r.targets[0], targets: r.targets.slice(0, 3), entry: r.entry });
-  return momentumText(top, await activities(top.map((r) => r.code)), { skipped: found.filter((r) => weak(r.odds)).length });
+  return momentumText(top, await activities(top.map((r) => r.code)), { skipped: found.filter((r) => weak(r.odds, base)).length });
 }
 
 // ---------- 🔔 متابعة توصيات اليوم: عند الافتتاح وبعد الإغلاق ----------
@@ -861,9 +862,10 @@ export async function run(name, ms = Date.now()) {
   if (name === "open") return follow("open", ms);
   if (name === "close") return follow("close", ms);
   if (name === "kw") return kw();
-  if (name === "hr") return hr();
+  if (name === "hr") return [await hr(), lessonsText()].join("\n\n━━━━━━━━━━\n\n");
   if (name === "score") return scorecard(ms);
   if (name === "week") return week(ms);
+  if (name === "lessons") return lessonsText();
   if (name === "intro") return introText();
   if (name === "kickoff") return kickoffText();
   throw new Error(`ما أعرف الوكيل ${name}`);
@@ -871,7 +873,10 @@ export async function run(name, ms = Date.now()) {
 
 // ---------- 🎓 the learned odds, and the day's scorecard ----------
 // a kind of setup that, with 30 or more past cases, reached its first target less than 40% of the time
-export const weak = (o) => !!o && o.n >= 30 && o.rate < 0.4;
+// a kind of setup that, with 30 or more past cases, reached its first target less than 40% of the
+// time, or less than the analyst's own average (base): each analyst keeps raising his own bar
+export const weak = (o, base = 0) => !!o && o.n >= 30 && o.rate < Math.max(0.4, base || 0);
+const baseOf = (agent) => learn.lessons(agent)?.rate || 0;
 export const oddsLine = (o) => (o ? `🎓 نجاح هالنوع تاريخيًا: ${Math.round(o.rate * 100)}% (من ${o.n} مرة)` : "");
 
 const AG_SCORED = ["tech", "momentum", "insiders", "earn"];
@@ -905,6 +910,22 @@ export function scoreText(rows, { today } = {}) {
     learned.length || back ? `🎓 اللي تعلمه الفريق:\n${[...learned.map(({ k, r }) => `• ${AGENTS[k].name}: ${Math.round(r.rate * 100)}% من ${r.n} توصية انتهت`), back ? `• سعود اختبر إعداده على سنة كاملة: ${Math.round(back.rate * 100)}% من ${back.n} مرة` : ""].filter(Boolean).join("\n")}\nكل توصية جديدة تنحسب، ونوع الإعداد اللي نجاحه أقل من 40% يتجاهلونه.` : "",
     "النجاح = وصل الهدف الأول قبل الوقف خلال 5 أيام. تحليل، مو ضمان.",
   ].filter(Boolean).join("\n\n");
+}
+
+// What each analyst learned: his success rate, the kinds of setups that work best for him, and
+// the ones he now leaves out.
+export function lessonsText(ls = Object.fromEntries(AG_SCORED.map((k) => [k, learn.lessons(k)]))) {
+  const parts = AG_SCORED.filter((k) => ls[k]?.n).map((k) => {
+    const L = ls[k], a = AGENTS[k];
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    return [
+      `${a.icon} ${a.name} (${a.ar}): نجاحه ${pct(L.rate)} من ${L.n} توصية`,
+      L.best.length ? `   ✅ أحسن شي له: ${L.best.map((b) => `${b.label} (${pct(b.rate)})`).join("، ")}` : "",
+      L.worst.length ? `   ❌ يتجنب: ${L.worst.map((b) => `${b.label} (${pct(b.rate)})`).join("، ")}` : "",
+    ].filter(Boolean).join("\n");
+  });
+  if (!parts.length) return "🎓 الفريق للحين يجمع بيانات. بعد أسبوع توصيات تبين الدروس.";
+  return ["🎓 شنو تعلم الفريق", parts.join("\n\n"), "كل محلل يتجاهل نوع الإعداد اللي نجاحه أقل من 40% أو أقل من معدله هو، فالمستوى يرتفع مع كل توصية."].join("\n\n");
 }
 
 async function scorecard(ms = Date.now()) {
