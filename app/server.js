@@ -484,6 +484,12 @@ async function handle(req, res) {
     if (p === "/api/uswatch/ai-test" && req.method === "POST") return send(res, 200, await uswatch.aiTest());
     if (p === "/api/uswatch/preview") return send(res, 200, await uswatch.preview(q.code));
     if (p === "/api/uswatch/radar" && req.method === "POST") return send(res, 200, await uswatch.radar());
+    // 🏛️ politicians' trades: a look (raw sample + normalized)
+    if (p === "/api/capitol") {
+      const c = await import("./lib/capitol.js");
+      const r = await c.trades({ fromDate: q.from || undefined }).catch((e) => ({ error: e.message }));
+      return send(res, 200, r.error ? r : { raw: r.raw, n: r.rows.length, rows: r.rows.slice(0, 15), big: c.bigBuys(r.rows).slice(0, 10) });
+    }
     if (p === "/api/ai-usage") {
       const m = await import("./lib/ai-write.js");
       // POST {on}: the AI switch

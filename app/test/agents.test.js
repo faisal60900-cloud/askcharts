@@ -73,7 +73,9 @@ test("the clock: each agent once a day at its time, US weekdays and Kuwaiti work
   // 8:50 New York: نورة on the morning's results; 10:05: the picks after the open
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 13, 50), {}).map((x) => x[0]), ["earnpre"]);
   assert.deepEqual(due(Date.UTC(2026, 10, 6, 15, 5), {}).map((x) => x[0]), ["open"]);
-  assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 50), {}).map((x) => x[0]), ["earn"]);
+  // (a Friday: the coming week's results too)
+  assert.deepEqual(due(Date.UTC(2026, 10, 6, 21, 50), {}).map((x) => x[0]), ["earn", "week"]);
+  assert.deepEqual(due(Date.UTC(2026, 10, 5, 21, 50), {}).map((x) => x[0]), ["earn"]);
   // Sunday 8 November, 10:35 in Kuwait: Kuwait's analyst (and nothing American on a Sunday)
   assert.deepEqual(due(Date.UTC(2026, 10, 8, 7, 35), {}), [["kw", "2026-11-08"]]);
   // Friday 10:35 in Kuwait: no Kuwaiti report

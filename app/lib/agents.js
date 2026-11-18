@@ -16,6 +16,7 @@ import * as usflow from "./usflow.js";
 import * as kwwatch from "./kwwatch.js";
 import * as sharia from "./sharia.js";
 import * as learn from "./learn.js";
+import * as capitol from "./capitol.js";
 import { write, ANALYST } from "./ai-write.js";
 import { nasdaqEarnings, nasdaqSurprise, nasdaqLiveQuotes, getCandles, nasdaqScreener } from "./providers.js";
 import { news as newsOf } from "./market-info.js";
@@ -607,7 +608,8 @@ async function mineMoves(ms = Date.now()) {
 // ⚡ خالد: a big purchase by a company's own chief (or Berkshire) the moment it's filed
 export function bigInsiderNew(rows, seen = {}, { since = "", min = 1e6 } = {}) {
   const top = /chief executive|\bceo\b|\bcfo\b|chief financial|\bpres|chair|\bcob\b/i;
-  return rows.filter((r) => r.value >= min && (!since || r.date >= since) && (top.test(r.title) || /berkshire/i.test(r.who)) && !seen[`${r.code}|${r.date}|${r.qty}`] && (seen[`${r.code}|${r.date}|${r.qty}`] = 1));
+  // the top officers, Berkshire, and the big owners (10% or more of the company)
+  return rows.filter((r) => r.value >= min && (!since || r.date >= since) && (top.test(r.title) || /berkshire/i.test(r.who) || /10%/.test(r.title)) && !seen[`${r.code}|${r.date}|${r.qty}`] && (seen[`${r.code}|${r.date}|${r.qty}`] = 1));
 }
 async function liveInsiders(send, ms = Date.now()) {
   const res = await fetch("http://openinsider.com/latest-insider-purchases-25k", { headers: { "user-agent": "Mozilla/5.0 AskCharts" }, signal: AbortSignal.timeout(20000) });
@@ -627,6 +629,106 @@ async function liveInsiders(send, ms = Date.now()) {
     await send(`${AGENTS.insiders.icon} ${AGENTS.insiders.name} · ${AGENTS.insiders.ar}\n⚡ شراء كبير جديد من داخل الشركة\n\n${stockBlock(r.code, { act: acts[r.code], price: L.price, lo: L.lo, hi: L.hi, stop: L.stop, targets: L.targets, fresh: L.fresh, note: `👔 ${roleAr(r.title, r.who)} اشترى ${n2(r.qty, 0)} سهم على ${n2(r.price)}$ = ${n2(r.value / 1e6, 1)} مليون$ (${r.date})` })}\n\nشراء المدير إشارة ثقة، مو توقيت.`);
   }
   return fresh.length;
+}
+
+// ---------- 🏛️ خالد: members of Congress buying (their STOCK Act filings) ----------
+// A new filed purchase of a listed stock, $50,000 or more at the top of its range, from the last
+// 15 days of filings; each once. The first look only learns what's there.
+const CHAMBER = { house: "مجلس النواب", senate: "مجلس الشيوخ" };
+const money0 = (v) => (v >= 1e6 ? `${n2(v / 1e6, 1)} مليون$` : `${n2(v / 1e3, 0)} ألف$`);
+export function capitolText(r, { act = "", price = null, tag = "" } = {}) {
+  const since = r.est > 0 && price > 0 ? ((price / r.est - 1) * 100) : null;
+  return [
+    `${AGENTS.insiders.icon} ${AGENTS.insiders.name} · ${AGENTS.insiders.ar}`,
+    `🏛️ عضو كونغرس أمريكي اشترى`,
+    "",
+    `• ${r.code}${act ? ` · ${act}` : ""}${tag ? ` · ${tag}` : ""}`,
+    `   👤 ${r.who}${r.chamber ? ` (${CHAMBER[String(r.chamber).toLowerCase()] || r.chamber}${r.state ? `، ${r.state}` : ""})` : ""}`,
+    `   💰 المبلغ: ${money0(r.lo)} – ${money0(r.hi)}`,
+    `   📅 اشترى ${r.txDate}${r.filed ? ` · أفصح ${r.filed}` : ""}`,
+    r.est > 0 ? `   💵 سعر شرائه تقريبًا ${n2(r.est)}$${price > 0 ? ` · الحين ${n2(price)}$ (${since >= 0 ? "+" : ""}${n2(since, 1)}%)` : ""}` : price > 0 ? `   💵 الحين ${n2(price)}$` : "",
+  ]
+    .filter((l) => l !== null && l !== undefined && l !== false)
+    .join("\n")
+    .concat("\n\nالأعضاء يفصحون متأخر (لين 45 يوم)، فخذها معلومة مو توقيت دخول.");
+}
+async function liveCapitol(send, ms = Date.now()) {
+  const from = new Date(ms - 15 * 86400e3).toISOString().slice(0, 10);
+  const { rows } = await capitol.trades({ fromDate: from });
+  st.seenCap ||= {};
+  const first = !Object.keys(st.seenCap).length;
+  const fresh = capitol.bigBuys(rows).filter((r) => {
+    const k = `${r.who}|${r.code}|${r.txDate}|${r.hi}`;
+    return !st.seenCap[k] && (st.seenCap[k] = r.filed || from);
+  });
+  for (const [k, d] of Object.entries(st.seenCap)) if (d < new Date(ms - 60 * 86400e3).toISOString().slice(0, 10)) delete st.seenCap[k];
+  save();
+  if (first || !fresh.length) return 0;
+  const usw = await import("./uswatch.js");
+  const quotes = await nasdaqLiveQuotes([...new Set(fresh.map((r) => r.code))], "stocks").catch(() => ({}));
+  const keep1 = fresh.filter((r) => usw.priceOk(quotes[r.code]?.price ?? r.est));
+  await sharia.keep(keep1.map((r) => r.code), (c) => c).catch(() => {});
+  const acts = await activities(keep1.map((r) => r.code));
+  for (const r of keep1.slice(0, 6)) await send(capitolText(r, { act: acts[r.code], price: quotes[r.code]?.price, tag: sharia.tag(r.code) }));
+  return keep1.length;
+}
+
+// ---------- 📅 الأسبوع الجاي: the coming week's results, Friday after the close ----------
+// The big companies (in the $1–$200 range) reporting each day of next week: their last two
+// quarters against the forecast, and where the chart stands now (trend, RSI). The verdict is the
+// chart's, not the results': results can move a stock either way.
+export function chartVerdict(f) {
+  if (!f) return "";
+  const t = f.up50 && f.up200 ? "فوق متوسط 50 و200 يوم" : !f.up50 && f.up200 === false ? "تحت متوسط 50 و200 يوم" : "بين المتوسطات";
+  const v = f.up50 && f.up200 && f.rsi >= 40 && f.rsi <= 68 ? "🟢 وضعه الفني إيجابي" : !f.up50 && f.up200 === false ? "🔴 وضعه الفني ضعيف" : f.rsi > 70 ? "🟠 مشبع شراء" : "🟡 محايد";
+  return `${v} (${t} · RSI ${f.rsi})`;
+}
+const DAY_AR = { Mon: "الاثنين", Tue: "الثلاثاء", Wed: "الأربعاء", Thu: "الخميس", Fri: "الجمعة" };
+export function weekText(days, { tags = {}, acts = {} } = {}) {
+  const rows = days.filter((d) => d.list.length);
+  if (!rows.length) return `${head("earn")}\n\n📅 الأسبوع الجاي: ما في شركات كبيرة تعلن نتائجها.`;
+  const body = rows.map((d) => `📆 ${DAY_AR[d.wd] || d.wd} ${d.date}:\n${d.list.map((r) => [
+    `• ${r.code}${acts[r.code] ? ` · ${acts[r.code]}` : ""}${tags[r.code] ? ` · ${tags[r.code]}` : ""}`,
+    `   ⏰ ${r.when === "pre" ? "قبل الافتتاح" : r.when === "post" ? "بعد الإغلاق" : "الموعد مو محدد"}${r.price > 0 ? ` · 💵 ${n2(r.price)}$` : ""}`,
+    r.q?.length ? `   📊 آخر ربعين: ${r.q.map((x) => `${x.eps}$ مقابل توقع ${x.forecast}$ ${x.surprise > 0.5 ? "✅" : x.surprise < -0.5 ? "❌" : "⚪"}`).join(" · ")}` : "",
+    r.chart ? `   ${r.chart}` : "",
+    r.star ? "   ⭐ فاقت التوقعات آخر ربعين، ووضعها الفني إيجابي: مرشحة للمتابعة بعد النتائج" : "",
+  ].filter(Boolean).join("\n")).join("\n\n")}`).join("\n\n");
+  return [
+    `${AGENTS.earn.icon} ${AGENTS.earn.name} · ${AGENTS.earn.ar}`,
+    "📅 نتائج الأسبوع الجاي (الشركات الكبيرة من 1$ إلى 200$):",
+    body,
+    "يوم النتائج السهم ممكن يطلع أو ينزل بقوة. الدخول الأسلم بعد ما تطلع النتائج ويبين اتجاه السعر. تحليل، مو توصية.",
+  ].join("\n\n");
+}
+async function week(ms = Date.now()) {
+  const us = await import("./uswatch.js");
+  const days = [];
+  let d = new Date(`${nyDates(ms).today}T12:00:00Z`);
+  while (days.length < 5) {
+    d = new Date(d.getTime() + 86400e3);
+    if ([0, 6].includes(d.getUTCDay())) continue;
+    const date = d.toISOString().slice(0, 10);
+    const wd = d.toUTCString().slice(0, 3);
+    const list = (await nasdaqEarnings(date).catch(() => [])).filter((r) => r.cap >= 10e9).sort((a, b) => b.cap - a.cap).slice(0, 8);
+    days.push({ date, wd, list });
+  }
+  const codes = [...new Set(days.flatMap((x) => x.list.map((r) => r.code)))];
+  const quotes = await nasdaqLiveQuotes(codes, "stocks").catch(() => ({}));
+  for (const x of days) {
+    x.list = x.list.filter((r) => us.priceOk(quotes[r.code]?.price ?? r.price)).slice(0, 4);
+    for (const r of x.list) {
+      r.price = quotes[r.code]?.price ?? r.price;
+      r.q = (await nasdaqSurprise(r.code).catch(() => [])).slice(0, 2).map((s) => ({ eps: s.eps, forecast: s.forecast, surprise: s.surprise }));
+      const b = (await getCandles(`US:${r.code}`, "1D", 260).catch(() => ({ candles: [] }))).candles || [];
+      const f = learn.features(b, b.length - 1);
+      r.chart = chartVerdict(f);
+      r.star = r.q.length === 2 && r.q.every((s) => s.surprise > 0.5) && f?.up50 && f?.up200 && f.rsi <= 68;
+    }
+  }
+  const all = days.flatMap((x) => x.list.map((r) => r.code));
+  await sharia.keep(all, (c) => c).catch(() => {});
+  return weekText(days, { tags: Object.fromEntries(all.map((c) => [c, sharia.tag(c)])), acts: await activities(all) });
 }
 
 // ---------- 👩‍💼 الموارد البشرية ----------
@@ -761,6 +863,7 @@ export async function run(name, ms = Date.now()) {
   if (name === "kw") return kw();
   if (name === "hr") return hr();
   if (name === "score") return scorecard(ms);
+  if (name === "week") return week(ms);
   if (name === "intro") return introText();
   if (name === "kickoff") return kickoffText();
   throw new Error(`ما أعرف الوكيل ${name}`);
@@ -841,6 +944,8 @@ export function due(ms = Date.now(), sent = st.sent) {
   if (kwWork && win(kwMin, 10 * 60 + 30) && !sent[`kw|${kwDay}`]) out.push(["kw", kwDay]);
   // the weekly review: Friday after the US close
   if (n.weekday === "Fri" && win(nyMin, 16 * 60 + 30) && !sent[`hr|${nyDay}`]) out.push(["hr", nyDay]);
+  // the coming week's results: Friday after the close
+  if (n.weekday === "Fri" && win(nyMin, 16 * 60 + 50, 30) && !sent[`week|${nyDay}`]) out.push(["week", nyDay]);
   return out;
 }
 
@@ -882,6 +987,11 @@ async function tick() {
   if (st.on.insiders && work && nyMin >= 8 * 60 && nyMin < 18 * 60 && Date.now() - (st.insAt || 0) >= 30 * 60e3) {
     st.insAt = Date.now();
     await liveInsiders(tg).catch(() => {});
+  }
+  // 🏛️ Congress buys: every 2 hours on weekdays (the free API allows 30 calls a day)
+  if (st.on.insiders && work && nyMin >= 8 * 60 && nyMin < 20 * 60 && Date.now() - (st.capAt || 0) >= 120 * 60e3) {
+    st.capAt = Date.now();
+    await liveCapitol(tg).catch(() => {});
   }
   const old = new Date(Date.now() - 10 * 86400e3).toISOString().slice(0, 10);
   for (const k of Object.keys(st.sent)) if (k.split("|")[1] < old) delete st.sent[k];

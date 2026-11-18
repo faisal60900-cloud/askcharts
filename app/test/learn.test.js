@@ -58,3 +58,29 @@ test("scoring the picks: each resolved one goes into the live record once", () =
   learn.score(picks, { AAA: b }, { today: d80 });
   assert.equal(learn.record("momentum").w, 1);
 });
+
+test("Congress trades: the API's rows read, and the big buys of listed stocks kept", async () => {
+  const c = await import("../lib/capitol.js");
+  const r = c.normalize({ member: "David J. Taylor", chamber: "house", state: "OH02", ticker: "LRCX", asset: "Lam Research", type: "purchase", amount_low: 50001, amount_high: 100000, transaction_date: "2026-11-05", disclosure_date: "2026-11-12", est_price: 95.5 });
+  assert.deepEqual([r.who, r.type, r.code, r.lo, r.hi, r.txDate, r.filed, r.est], ["David J. Taylor", "buy", "LRCX", 50001, 100000, "2026-11-05", "2026-11-12", 95.5]);
+  assert.equal(c.normalize({ type: "sale_full", ticker: "PG" }).type, "sell");
+  assert.deepEqual(c.amountOf("$1,001 - $15,000"), { lo: 1001, hi: 15000 });
+  const small = { ...r, hi: 15000 }, fund = { ...r, code: "" }, sale = { ...r, type: "sell" };
+  assert.deepEqual(c.bigBuys([r, small, fund, sale]).length, 1);
+  const { capitolText } = await import("../lib/agents.js");
+  const t = capitolText(r, { act: "معدات تصنيع الرقائق", price: 105, tag: "🕌 شرعي" });
+  assert.match(t, /🏛️ عضو كونغرس أمريكي اشترى\n\n• LRCX · معدات تصنيع الرقائق · 🕌 شرعي\n   👤 David J\. Taylor \(مجلس النواب، OH02\)\n   💰 المبلغ: 50 ألف\$ – 100 ألف\$\n   📅 اشترى 2026-11-05 · أفصح 2026-11-12\n   💵 سعر شرائه تقريبًا 95\.5\$ · الحين 105\$ \(\+9\.9%\)/);
+});
+
+test("the coming week: each day's reporters, their last two quarters, and the chart", async () => {
+  const { weekText, chartVerdict } = await import("../lib/agents.js");
+  assert.match(chartVerdict({ up50: true, up200: true, rsi: 55 }), /^🟢 وضعه الفني إيجابي \(فوق متوسط 50 و200 يوم · RSI 55\)/);
+  assert.match(chartVerdict({ up50: false, up200: false, rsi: 30 }), /^🔴 وضعه الفني ضعيف/);
+  assert.match(chartVerdict({ up50: true, up200: false, rsi: 50 }), /^🟡 محايد \(بين المتوسطات/);
+  const t = weekText([
+    { date: "2026-11-23", wd: "Mon", list: [{ code: "AAA", when: "post", price: 50, q: [{ eps: 1.2, forecast: 1, surprise: 20 }, { eps: 0.9, forecast: 1, surprise: -10 }], chart: "🟡 محايد (بين المتوسطات · RSI 50)" }] },
+    { date: "2026-11-24", wd: "Tue", list: [] },
+  ], { tags: { AAA: "🕌 شرعي" }, acts: { AAA: "برامج" } });
+  assert.match(t, /📆 الاثنين 2026-11-23:\n• AAA · برامج · 🕌 شرعي\n   ⏰ بعد الإغلاق · 💵 50\$\n   📊 آخر ربعين: 1\.2\$ مقابل توقع 1\$ ✅ · 0\.9\$ مقابل توقع 1\$ ❌\n   🟡 محايد/);
+  assert.doesNotMatch(t, /الثلاثاء/);
+});
