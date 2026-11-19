@@ -378,6 +378,15 @@ export async function radar() {
 }
 
 // ---------- news ----------
+// a company's code or the distinctive word of its name ("Medline Inc." → Medline), as a whole word
+const GENERIC = /^(the|inc|corp|corporation|co|company|group|holdings?|ltd|plc|sa|nv|ag|class|common|stock|shares|technologies|international)$/i;
+export function matchOf(code, en = "") {
+  const word = String(en).replace(/[^A-Za-z0-9& .-]/g, " ").split(/\s+/).find((w) => w.length >= 3 && !GENERIC.test(w.replace(/\./g, "")));
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // a one- or two-letter code ("A", "T") would match ordinary words: then the name only
+  const parts = [word && code.length < 3 ? null : code, word].filter(Boolean);
+  return new RegExp(`\\b(${parts.map(esc).join("|")})\\b`, "i");
+}
 export async function newsCheck() {
   const since = Date.now() - 5 * 86400e3;
   let sent = 0;
@@ -391,18 +400,19 @@ export async function newsCheck() {
     }
     if (!w.keep && cfg.light && w.newsDay === ny().date) continue;
     const items = (await newsOf(w.symbol).catch(() => ({ items: [] }))).items.filter((h) => h.url && !state.newsSeen[h.url] && (h.time || Date.now()) >= w.since - 86400e3)
-      // a followed stock: only news that is about the company itself (the feed also tags articles that merely list it)
-      .filter((h) => !w.match || w.match.test(`${h.title} ${h.summary || ""}`) || (state.newsSeen[h.url] = Date.now(), false))
+      // only news about the company itself: its code or name in the headline or summary (the feed also
+      // sends general market news and articles that merely list it)
+      .filter((h) => (w.match || matchOf(code, w.en)).test(`${h.title} ${h.summary || ""}`) || (state.newsSeen[h.url] = Date.now(), false))
       .slice(0, 3);
     if (!items.length) continue;
     for (const h of items) state.newsSeen[h.url] = Date.now();
     w.newsDay = ny().date;
-    // the translation (tokens) only for your stocks: the followed ones and your trades; the rest in English
     const yours = w.keep || trades.list("us").some((t) => t.mine && t.code === code);
     // a stock outside the $1–$200 range: no news, unless it's yours
     const q0 = (await nasdaqLiveQuotes([code], "stocks").catch(() => ({})))[code];
     if (!yours && q0?.price > 0 && !priceOk(q0.price)) continue;
-    const ar = !yours ? null : await ai(`ترجم هذه الأخبار عن سهم ${code} (${w.en}) للعربي، ولكل خبر سطرين: العنوان مترجم، ثم خلاصة قصيرة وهل يبدو إيجابي أو سلبي أو محايد للسهم وليش. لا تضف معلومات غير موجودة.\n\n${items.map((h, k) => `${k + 1}. ${h.title}\n${h.summary || ""}\n(${h.source || ""})`).join("\n\n")}`, 2500, { cheap: true });
+    // in Arabic, on the small model (cheap); English only when the AI is off or fails
+    const ar = await ai(`ترجم هذه الأخبار عن سهم ${code} (${w.en}) للعربي، ولكل خبر سطرين: العنوان مترجم، ثم خلاصة قصيرة وهل يبدو إيجابي أو سلبي أو محايد للسهم وليش. لا تضف معلومات غير موجودة.\n\n${items.map((h, k) => `${k + 1}. ${h.title}\n${h.summary || ""}\n(${h.source || ""})`).join("\n\n")}`, 2500, { cheap: true });
     // the price now (or the last pre/after-market trade), so the news reads against the stock
     const q = q0;
     const px = q?.price > 0 ? `💵 السعر الحين: ${q.price.toLocaleString("en-US", { maximumFractionDigits: 2 })}$${Number.isFinite(q.changePct) ? ` (${q.changePct > 0 ? "+" : ""}${q.changePct.toFixed(1)}% اليوم)` : ""}` : "";

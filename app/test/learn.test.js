@@ -99,3 +99,15 @@ test("the lessons: the best and worst kinds in words, and the bar each analyst r
   assert.equal(weak({ rate: 0.45, n: 40 }, 0.5), true);
   assert.equal(weak({ rate: 0.2, n: 10 }, 0.5), false);
 });
+
+test("news: only the articles about the company (its code or name), not the general market news", async () => {
+  const { matchOf } = await import("../lib/uswatch.js");
+  const m = matchOf("MDLN", "Medline Inc.");
+  assert.equal(m.test("Medline beats third-quarter estimates"), true);
+  assert.equal(m.test("MDLN shares rise"), true);
+  assert.equal(m.test("NetEase, Inc. Reports Third Quarter 2026 Unaudited Financial Results"), false);
+  assert.equal(m.test("FTSE 100 Hovers Near 6-Week Lows"), false);
+  // a one-letter code: the name only
+  assert.equal(matchOf("A", "Agilent Technologies").test("a deal for a company"), false);
+  assert.equal(matchOf("A", "Agilent Technologies").test("Agilent raises its outlook"), true);
+});
